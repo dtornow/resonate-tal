@@ -6,6 +6,6 @@ TLA+ models copied from [resonatehq/resonate](https://github.com/resonatehq/reso
 |---|---|
 | `spec/tlap/Abstract.tla` | the protocol: a step may sweep any number of due actions, then one request |
 | `spec/tlap/Concrete.tla` | the same protocol as one document per origin, with a CAS and a timeout wheel |
-| `spec/tlap/Refinement.tla` | the refinement attempt: a stuttering variable so each concrete write maps onto abstract steps |
+| `spec/tlap/Refinement.tla` | the refinement: the abstract clock is the oldest unwritten decision, and one document write is one abstract step |
 
 `Requests.tla` is the shared vocabulary. `Invariants.tla` is the catalogue, instantiated by both machines. Configs, `check.sh`, and the checker generators sit beside the modules. See `spec/tlap/README.md`.
