@@ -600,6 +600,17 @@ Set(f, k, v) ==
 Del(f, k) ==
     [x \in (DOMAIN f) \ {k} |-> f[x]]
 
+(* Messages committed by a write. The network send is not in this model. *)
+Deliver(ob, ms) ==
+    LET upto[n \in 0 .. Len(ms)] ==
+          IF n = 0 THEN
+              ob
+          ELSE
+              LET acc == upto[n - 1]
+              IN  { x \in acc : MsgKey(x) /= MsgKey(ms[n]) } \cup {ms[n]}
+    IN
+        upto[Len(ms)]
+
 SubmitExternal(ev) ==
     /\ ev \in ExternalEvent
     /\ \E r \in Rid \ DOMAIN steps : steps' = Set(steps, r, Fresh(ev))
@@ -628,11 +639,10 @@ Process(r) ==
                                   ![r].pending =
                                       [ n \in 1 .. Len(puts) |->
                                           [tag |-> "PutTimeout", entry |-> puts[n]] ]
-                                        \o << [tag |-> "PutDocument", body |-> final] >>
+                                        \o << [tag |-> "PutDocument", body |-> final,
+                                               sends |-> sends] >>
                                         \o [ n \in 1 .. Len(dels) |->
-                                               [tag |-> "DelTimeout", entry |-> dels[n]] ]
-                                        \o [ n \in 1 .. Len(sends) |->
-                                               [tag |-> "Send", entry |-> sends[n]] ],
+                                               [tag |-> "DelTimeout", entry |-> dels[n]] ],
                                   ![r].expect  = docs[o]]
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
@@ -652,10 +662,11 @@ Perform(r) ==
                         /\ UNCHANGED <<docs, outbox, now>>
                  [] e.tag = "PutDocument" ->
                         IF docs[OriginOf(steps[r].ev)] = steps[r].expect THEN
-                            /\ docs'  = [docs EXCEPT
-                                             ![OriginOf(steps[r].ev)] = e.body]
-                            /\ steps' = rest
-                            /\ UNCHANGED <<timeouts, outbox, now>>
+                            /\ docs'    = [docs EXCEPT
+                                               ![OriginOf(steps[r].ev)] = e.body]
+                            /\ outbox'  = Deliver(outbox, e.sends)
+                            /\ steps'   = rest
+                            /\ UNCHANGED <<timeouts, now>>
                         ELSE
                             /\ steps' = [steps EXCEPT ![r].phase   = "process",
                                                       ![r].pending = << >>]
@@ -664,11 +675,6 @@ Perform(r) ==
                         /\ timeouts' = timeouts \ {e.entry}
                         /\ steps'    = rest
                         /\ UNCHANGED <<docs, outbox, now>>
-                 [] OTHER ->
-                        /\ outbox' = { x \in outbox : MsgKey(x) /= MsgKey(e.entry) }
-                                       \cup {e.entry}
-                        /\ steps'  = rest
-                        /\ UNCHANGED <<docs, timeouts, now>>
 
 Crash(r) ==
     /\ r \in DOMAIN steps

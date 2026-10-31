@@ -34,13 +34,10 @@
    replays at that instant, and `clockA` catches the abstract clock up to it
    before the write is explained.
 
-   The outbox mapping reads pending. An abstract message step strikes the
-   document and enqueues the message in one action; the executor splits it --
-   the write commits the strike, the Send goes later. So the mapping counts a
-   message from the moment its write lands: `Outstanding` folds every landed
-   request's still-pending sends over the real outbox, and a real Send step
-   then moves a message from pending to outbox without changing the mapped
-   value at all -- a stutter, as it must be. *)
+   The write enqueues. A message is in the outbox at the same instant the
+   document lands; this model does not take the further step of putting it
+   on the wire. Mid-walk, the mapping counts the sends the replay has
+   produced, which the write itself has not landed yet. *)
 EXTENDS Concrete
 
 VARIABLES s, clockA
@@ -295,10 +292,11 @@ Walked(r) ==
                /\ UNCHANGED <<clockA, docs, timeouts, outbox, steps, now>>
            ELSE
                /\ s' = top
-               /\ docs'  = [docs EXCEPT
-                                ![OriginOf(steps[r].ev)] = Head(steps[r].pending).body]
-               /\ steps' = [steps EXCEPT ![r].pending = Tail(@)]
-               /\ UNCHANGED <<clockA, timeouts, outbox, now>>
+               /\ docs'   = [docs EXCEPT
+                                 ![OriginOf(steps[r].ev)] = Head(steps[r].pending).body]
+               /\ outbox' = Deliver(outbox, Head(steps[r].pending).sends)
+               /\ steps'  = [steps EXCEPT ![r].pending = Tail(@)]
+               /\ UNCHANGED <<clockA, timeouts, now>>
 
 (* `Concrete`'s next-state relation, with the write replaced by the walk and
    everything else held still while one is in progress. Nothing may interleave
@@ -328,16 +326,6 @@ SpecS ==
 
 -----------------------------------------------------------------------------
 
-SendsInto(ob, ms) ==
-    LET upto[n \in 0 .. Len(ms)] ==
-          IF n = 0 THEN
-              ob
-          ELSE
-              LET acc == upto[n - 1]
-              IN  { x \in acc : MsgKey(x) /= MsgKey(ms[n]) } \cup {ms[n]}
-    IN
-        upto[Len(ms)]
-
 ObjectsAt(d, o) ==
     LET D == [ p \in Origin |-> IF p = o THEN d ELSE docs[p] ]
     IN  [ i \in UNION { DOMAIN D[p] : p \in Origin } |-> D[i.origin][i] ]
@@ -346,33 +334,12 @@ ObjectsAt(d, o) ==
 At ==
     Walk(s.req)[s.k]
 
-(* A message counts from the moment its write lands. *)
-Landed(r) ==
-    /\ steps[r].phase = "perform"
-    /\ \A n \in DOMAIN steps[r].pending :
-           steps[r].pending[n].tag /= "PutDocument"
-
-SendsOf(r) ==
-    LET q == SelectSeq(steps[r].pending, LAMBDA x : x.tag = "Send")
-    IN  [ n \in 1 .. Len(q) |-> q[n].entry ]
-
-Outstanding ==
-    LET L == { r \in DOMAIN steps : Landed(r) }
-        f[T \in SUBSET L] ==
-            IF T = {} THEN
-                outbox
-            ELSE
-                LET r == CHOOSE x \in T : TRUE
-                IN  SendsInto(f[T \ {r}], SendsOf(r))
-    IN
-        f[L]
-
 P == INSTANCE Abstract WITH
          now     <- clockA,
          objects <- IF s = top \/ s.k = 0 THEN Objects
                     ELSE ObjectsAt(At.doc, OriginOf(steps[s.req].ev)),
-         outbox  <- IF s = top \/ s.k = 0 THEN Outstanding
-                    ELSE SendsInto(Outstanding, At.sends)
+         outbox  <- IF s = top \/ s.k = 0 THEN outbox
+                    ELSE Deliver(outbox, At.sends)
 
 (* THE PREMISE OF THE LAGGING CLOCK, checked rather than assumed: the abstract
    clock never passes the `at` of a write that can still land. Per document
