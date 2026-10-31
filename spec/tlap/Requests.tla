@@ -3,7 +3,7 @@
 (* THE VOCABULARY. What an object is, what a request is, what an effect    *)
 (* is, and which events exist. Shared, because it is the same protocol     *)
 (* being spoken about -- `Abstract` and `Concrete` are two independent     *)
-(* machines, and the refinement asks whether their behaviour lines up.     *)
+(* machines.                                                                *)
 (* Nothing here decides anything: no handler, no transition, no state.     *)
 (***************************************************************************)
 EXTENDS Integers, Sequences, FiniteSets

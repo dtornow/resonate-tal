@@ -2,7 +2,7 @@
 # Check the model.
 #
 #   ./check.sh                        Abstract, every invariant expected to hold
-#   ./check.sh Concrete               Concrete, including the refinement
+#   ./check.sh Concrete               Concrete
 #   ./check.sh Abstract WheelComplete one name, to watch it fail
 #
 # TLC is the checker. Apalache could not reach depth 6 of this machine in 25
@@ -38,11 +38,10 @@ else
     CFG=$(mktemp /tmp/one-XXXX.cfg)
     sed -n "1,/MaxVersion/p" "$SPEC.cfg" > "$CFG"
     # a T_ or CT_ prefix marks a wrapped .trans entry, which TLC reads as a
-    # temporal property; Refinement is one too. Everything else is a state
-    # invariant.
+    # temporal property. Everything else is a state invariant.
     case "$2" in
-        T_*|CT_*|Refinement) echo "PROPERTY $2"  >> "$CFG" ;;
-        *)                   echo "INVARIANT $2" >> "$CFG" ;;
+        T_*|CT_*) echo "PROPERTY $2"  >> "$CFG" ;;
+        *)        echo "INVARIANT $2" >> "$CFG" ;;
     esac
 fi
 # -metadir keeps TLC's state pool and fingerprints OUT of the repo. They
