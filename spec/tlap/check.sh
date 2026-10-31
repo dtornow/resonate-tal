@@ -26,7 +26,7 @@ fi
 
 if [ ! -f "$TLA_TOOLS" ]; then
     echo "tla2tools.jar not found. Set TLA_TOOLS, or:"
-    echo "  curl -sSLO https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar"
+    echo "  curl -sSLO https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar"
     exit 1
 fi
 
@@ -48,6 +48,6 @@ fi
 # -metadir keeps TLC's state pool and fingerprints OUT of the repo. They
 # are large, they churn, and a stray `rm -rf` of build output inside the
 # tree will kill a running check by deleting the pool underneath it.
-java -XX:+UseParallelGC -cp "$TLA_TOOLS" tlc2.TLC \
+java -Dtlc2.tool.impl.Tool.cdot=true -XX:+UseParallelGC -cp "$TLA_TOOLS" tlc2.TLC \
      -config "$CFG" -workers 4 -deadlock \
      -metadir "${TLC_METADIR:-/tmp/tlc-$SPEC}" "$SPEC.tla"

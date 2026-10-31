@@ -13,7 +13,7 @@ failed = []
 while True:
     try:
         r = subprocess.run(
-            ['java','-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-config',mod+'.cfg',
+            ['java','-Dtlc2.tool.impl.Tool.cdot=true','-XX:+UseParallelGC','-cp',jar,'tlc2.TLC','-config',mod+'.cfg',
              '-workers','3','-metadir',md,'-cleanup',mod],
             capture_output=True, text=True, timeout=cap)
         out = r.stdout

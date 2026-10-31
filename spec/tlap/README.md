@@ -71,7 +71,7 @@ TLC is the checker; `check.sh` runs Apalache first on types only if it is on
 the PATH. Set `TLA_TOOLS` to your `tla2tools.jar`, or fetch it:
 
 ```
-curl -sSLO https://github.com/tlaplus/tlaplus/releases/latest/download/tla2tools.jar
+curl -sSLO https://github.com/tlaplus/tlaplus/releases/download/v1.8.0/tla2tools.jar
 ```
 
 The default sweep covers the whole reachable state space — ~474 000 distinct

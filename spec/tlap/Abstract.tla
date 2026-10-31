@@ -379,6 +379,30 @@ ProcessCallback ==
 
 -----------------------------------------------------------------------------
 
+Due ==
+    \/ ProcessPromiseTimeout
+    \/ ProcessLeaseTimeout
+    \/ ProcessRetryTimeout
+    \/ ProcessListener
+    \/ ProcessCallback
+
+(* A step may take any number of due actions, from none through all, in any
+   order they are enabled, and then a handler. The same chain is also a step
+   by itself. `Sweep(k)` is any such chain of length at most k. The bound is
+   one promise timeout, one lease timeout and one retry per object, plus one
+   listener per address and one callback per id. *)
+
+MaxSweep ==
+    Cardinality(Id) * (Cardinality(Id) + Cardinality(Address) + 3)
+
+RECURSIVE Sweep(_)
+Sweep(k) ==
+    IF k = 0 THEN UNCHANGED <<objects, outbox, now>>
+    ELSE \/ UNCHANGED <<objects, outbox, now>>
+         \/ Due \cdot Sweep(k - 1)
+
+-----------------------------------------------------------------------------
+
 Clock ==
     /\ now' = now + 1
     /\ UNCHANGED <<objects, outbox>>
@@ -390,7 +414,7 @@ Init ==
     /\ outbox  = {}
     /\ now     = 0
 
-Next ==
+Handler ==
     \/ \E req \in CreateReq   : HandlePromiseCreate(req)
     \/ \E req \in SettleReq   : HandlePromiseSettle(req)
     \/ \E req \in CallbackReq : HandlePromiseRegisterCallback(req)
@@ -410,11 +434,10 @@ Next ==
     \/ \E req \in TaskRefT : HandleTaskRelease(req)
     \/ \E req \in [id : Id] : HandleTaskHalt(req)
     \/ \E req \in [id : Id] : HandleTaskContinue(req)
-    \/ ProcessPromiseTimeout
-    \/ ProcessLeaseTimeout
-    \/ ProcessRetryTimeout
-    \/ ProcessListener
-    \/ ProcessCallback
+
+Next ==
+    \/ Sweep(MaxSweep) \cdot Handler
+    \/ Due \cdot Sweep(MaxSweep - 1)
     \/ Clock
 
 Fairness ==
