@@ -4,7 +4,7 @@ TLA+ models copied from [resonatehq/resonate](https://github.com/resonatehq/reso
 
 | | |
 |---|---|
-| `spec/tlap/Abstract.tla` | the protocol as one action per request |
+| `spec/tlap/Abstract.tla` | the protocol: a step may sweep any number of due actions, then one request |
 | `spec/tlap/Concrete.tla` | the same protocol as one document per origin, with a CAS and a timeout wheel |
 | `spec/tlap/Refinement.tla` | the refinement attempt: a stuttering variable so each concrete write maps onto abstract steps |
 

@@ -52,356 +52,405 @@ Project(obj, t) ==
     ELSE
         obj
 
-(* @type: ($createReq, Int) => $object; *)
+(* TLC rejects `UNION` of the empty set. A fence on the only id has no other
+   request to nest, and a disabled handler contributes nothing. *)
+Flat(S) ==
+    IF S = {} THEN {} ELSE UNION S
 
 -----------------------------------------------------------------------------
 
-HandlePromiseCreate(req) ==
-    /\ req.id \notin DOMAIN objects
-    /\ objects' = Write(objects, req.id, New(req, now))
-    /\ UNCHANGED <<outbox, now>>
+(* A handler reads the swept store, which is not `objects` yet, and returns
+   the object-maps it can produce. None, when it is disabled. It does not
+   touch the outbox: a message is a due action's effect. *)
 
-HandlePromiseSettle(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.promise.state = "pending"
-           /\ objects' =
-                  Write(objects, req.id,
-                        [ promise |-> [old.promise EXCEPT !.state     = req.state,
-                                                        !.value     = req.value,
-                                                        !.settledAt = now],
-                        task    |-> [old.task EXCEPT
-                                        !.state          = IF @ = "none" THEN "none"
-                                                           ELSE "fulfilled",
-                                        !.pid            = NoPid,
-                                        !.ttl            = NoTime,
-                                        !.leaseTimeoutAt = NoTime,
-                                        !.retryTimeoutAt = NoTime,
-                                        !.resumes        = {}] ])
-    /\ UNCHANGED <<outbox, now>>
+HandlePromiseCreate(o, req) ==
+    IF req.id \in DOMAIN o THEN
+        {}
+    ELSE
+        {Write(o, req.id, New(req, now))}
 
-HandlePromiseRegisterCallback(req) ==
-    /\ req.awaited \in DOMAIN objects
-    /\ req.awaiter \in DOMAIN objects
-    /\ LET awaited == Project(objects[req.awaited], now)
-           awaiter == Project(objects[req.awaiter], now)
-       IN
-           /\ awaiter.promise.tags.targeted
-           /\ IsExternal(awaited.promise)
-           /\ awaited.promise.state = "pending"
-           /\ awaiter.promise.state = "pending"
-           /\ objects' =
-                  Write(objects, req.awaited, [awaited EXCEPT !.promise.callbacks = @ \cup {req.awaiter}])
-    /\ UNCHANGED <<outbox, now>>
+HandlePromiseSettle(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+            new == [ promise |-> [old.promise EXCEPT !.state     = req.state,
+                                                    !.value     = req.value,
+                                                    !.settledAt = now],
+                     task    |-> [old.task EXCEPT
+                                     !.state          = IF @ = "none" THEN "none"
+                                                        ELSE "fulfilled",
+                                     !.pid            = NoPid,
+                                     !.ttl            = NoTime,
+                                     !.leaseTimeoutAt = NoTime,
+                                     !.retryTimeoutAt = NoTime,
+                                     !.resumes        = {}] ]
+        IN  IF old.promise.state = "pending" THEN {Write(o, req.id, new)} ELSE {}
 
-HandlePromiseRegisterListener(req) ==
-    /\ req.awaited \in DOMAIN objects
-    /\ LET old == Project(objects[req.awaited], now)
-       IN
-           /\ IsExternal(old.promise)
-           /\ old.promise.state = "pending"
-           /\ objects' =
-                  Write(objects, req.awaited, [old EXCEPT !.promise.listeners = @ \cup {req.address}])
-    /\ UNCHANGED <<outbox, now>>
+HandlePromiseRegisterCallback(o, req) ==
+    IF req.awaited \notin DOMAIN o \/ req.awaiter \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET awaited == Project(o[req.awaited], now)
+            awaiter == Project(o[req.awaiter], now)
+        IN  IF /\ awaiter.promise.tags.targeted
+               /\ IsExternal(awaited.promise)
+               /\ awaited.promise.state = "pending"
+               /\ awaiter.promise.state = "pending"
+            THEN {Write(o, req.awaited, [awaited EXCEPT !.promise.callbacks = @ \cup {req.awaiter}])}
+            ELSE {}
+
+HandlePromiseRegisterListener(o, req) ==
+    IF req.awaited \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.awaited], now)
+        IN  IF IsExternal(old.promise) /\ old.promise.state = "pending"
+            THEN {Write(o, req.awaited, [old EXCEPT !.promise.listeners = @ \cup {req.address}])}
+            ELSE {}
 
 -----------------------------------------------------------------------------
 
-HandleTaskCreate(req) ==
-    /\ req.action.tags.targeted
-    /\ \/ /\ req.action.id \notin DOMAIN objects
-          /\ LET born == New(req.action, now)
-             IN
-                 objects' =
-                     Write(objects, req.action.id,
-                           IF born.promise.state = "pending" THEN
-                             [born EXCEPT !.task.state          = "acquired",
-                                          !.task.version        = @ + 1,
-                                          !.task.ttl            = req.ttl,
-                                          !.task.pid            = req.pid,
-                                          !.task.leaseTimeoutAt = now + req.ttl,
-                                          !.task.retryTimeoutAt = NoTime,
-                                          !.task.resumes        = {}]
-                         ELSE
-                             born)
-       \/ /\ req.action.id \in DOMAIN objects
-          /\ LET old == Project(objects[req.action.id], now)
-             IN
-                 /\ old.promise.tags.targeted
-                 /\ old.task.state = "pending"
-                 /\ objects' =
-                        Write(objects, req.action.id,
-                              [old EXCEPT !.task.state     = "acquired",
-                                        !.task.version        = @ + 1,
-                                        !.task.ttl            = req.ttl,
-                                        !.task.pid            = req.pid,
-                                        !.task.leaseTimeoutAt = now + req.ttl,
-                                        !.task.retryTimeoutAt = NoTime,
-                                        !.task.resumes        = {}])
-    /\ UNCHANGED <<outbox, now>>
+HandleTaskCreate(o, req) ==
+    IF ~req.action.tags.targeted THEN
+        {}
+    ELSE IF req.action.id \notin DOMAIN o THEN
+        LET born == New(req.action, now)
+            held == [born EXCEPT !.task.state          = "acquired",
+                                 !.task.version        = @ + 1,
+                                 !.task.ttl            = req.ttl,
+                                 !.task.pid            = req.pid,
+                                 !.task.leaseTimeoutAt = now + req.ttl,
+                                 !.task.retryTimeoutAt = NoTime,
+                                 !.task.resumes        = {}]
+        IN  {Write(o, req.action.id, IF born.promise.state = "pending" THEN held ELSE born)}
+    ELSE
+        LET old == Project(o[req.action.id], now)
+        IN  IF old.promise.tags.targeted /\ old.task.state = "pending"
+            THEN {Write(o, req.action.id,
+                        [old EXCEPT !.task.state          = "acquired",
+                                    !.task.version        = @ + 1,
+                                    !.task.ttl            = req.ttl,
+                                    !.task.pid            = req.pid,
+                                    !.task.leaseTimeoutAt = now + req.ttl,
+                                    !.task.retryTimeoutAt = NoTime,
+                                    !.task.resumes        = {}])}
+            ELSE {}
 
-HandleTaskAcquire(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.task.state = "pending"
-           /\ old.promise.state = "pending"
-           /\ old.task.version = req.version
-           /\ objects' =
-                  Write(objects, req.id,
-                        [old EXCEPT !.task.state     = "acquired",
-                                  !.task.version        = @ + 1,
-                                  !.task.ttl            = req.ttl,
-                                  !.task.pid            = req.pid,
-                                  !.task.leaseTimeoutAt = now + req.ttl,
-                                  !.task.retryTimeoutAt = NoTime,
-                                  !.task.resumes        = {}])
-    /\ UNCHANGED <<outbox, now>>
+HandleTaskAcquire(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+        IN  IF /\ old.task.state = "pending"
+               /\ old.promise.state = "pending"
+               /\ old.task.version = req.version
+            THEN {Write(o, req.id,
+                        [old EXCEPT !.task.state          = "acquired",
+                                    !.task.version        = @ + 1,
+                                    !.task.ttl            = req.ttl,
+                                    !.task.pid            = req.pid,
+                                    !.task.leaseTimeoutAt = now + req.ttl,
+                                    !.task.retryTimeoutAt = NoTime,
+                                    !.task.resumes        = {}])}
+            ELSE {}
 
-HandleTaskFence(i, v) ==
-    /\ i \in DOMAIN objects
-    /\ LET old == Project(objects[i], now)
-       IN
-           /\ old.task.state = "acquired"
-           /\ old.promise.state = "pending"
-           /\ old.task.version = v
-           /\ \/ \E req \in CreateReq : req.id /= i /\ HandlePromiseCreate(req)
-              \/ \E req \in SettleReq : req.id /= i /\ HandlePromiseSettle(req)
+(* The nested create or settle sees this store. It is not swept again. *)
+HandleTaskFence(o, i, v) ==
+    IF i \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[i], now)
+        IN  IF /\ old.task.state = "acquired"
+               /\ old.promise.state = "pending"
+               /\ old.task.version = v
+            THEN
+                Flat({HandlePromiseCreate(o, req) : req \in {r \in CreateReq : r.id /= i}})
+                \cup Flat({HandlePromiseSettle(o, req) : req \in {r \in SettleReq : r.id /= i}})
+            ELSE
+                {}
 
-HandleTaskHeartbeat(req) ==
-    LET beat == { i \in DOMAIN objects :
-                    LET old == Project(objects[i], now)
+HandleTaskHeartbeat(o, req) ==
+    LET beat == { i \in DOMAIN o :
+                    LET old == Project(o[i], now)
                     IN  /\ \E rf \in req.tasks :
                               rf.id = i /\ rf.version = old.task.version
                         /\ old.task.state = "acquired"
                         /\ old.task.pid = req.pid
                         /\ old.promise.state = "pending" }
-    IN
-        /\ beat /= {}
-        /\ objects' =
-               [ i \in DOMAIN objects |->
-                    IF i \in beat THEN
-                        LET old == Project(objects[i], now)
-                        IN  [old EXCEPT !.task.leaseTimeoutAt = now + old.task.ttl]
-                    ELSE
-                        objects[i] ]
-        /\ UNCHANGED <<outbox, now>>
+    IN  IF beat = {} THEN
+            {}
+        ELSE
+            {[ i \in DOMAIN o |->
+                 IF i \in beat THEN
+                     LET old == Project(o[i], now)
+                     IN  [old EXCEPT !.task.leaseTimeoutAt = now + old.task.ttl]
+                 ELSE
+                     o[i] ]}
 
-HandleTaskSuspend(req) ==
-    LET aw == { a.awaited : a \in req.actions }
-    IN
-        /\ req.actions /= {}
-        /\ req.id \notin aw
-        /\ \A a \in aw : a.origin = req.id.origin
-        /\ req.id \in DOMAIN objects
-        /\ \A a \in aw : a \in DOMAIN objects
-        /\ LET old == Project(objects[req.id], now)
-           IN
-               /\ old.task.state = "acquired"
+HandleTaskSuspend(o, req) ==
+    LET aw == {a.awaited : a \in req.actions}
+    IN  IF \/ req.actions = {}
+           \/ req.id \in aw
+           \/ \E a \in aw : a.origin /= req.id.origin
+           \/ req.id \notin DOMAIN o
+           \/ \E a \in aw : a \notin DOMAIN o
+        THEN
+            {}
+        ELSE
+            LET old == Project(o[req.id], now)
+            IN  IF \/ old.task.state /= "acquired"
+                   \/ old.promise.state /= "pending"
+                   \/ old.task.version /= req.version
+                   \/ \E a \in aw : ~IsExternal(Project(o[a], now).promise)
+                THEN
+                    {}
+                ELSE IF \E a \in aw : Project(o[a], now).promise.state /= "pending" THEN
+                    {Write(o, req.id, [old EXCEPT !.task.resumes = {}])}
+                ELSE
+                    {[ i \in DOMAIN o |->
+                         IF i = req.id THEN
+                             [old EXCEPT !.task.state          = "suspended",
+                                         !.task.pid            = NoPid,
+                                         !.task.ttl            = NoTime,
+                                         !.task.leaseTimeoutAt = NoTime,
+                                         !.task.retryTimeoutAt = NoTime,
+                                         !.task.resumes        = {}]
+                         ELSE IF i \in aw THEN
+                             [Project(o[i], now) EXCEPT !.promise.callbacks = @ \cup {req.id}]
+                         ELSE
+                             o[i] ]}
+
+HandleTaskFulfill(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+            new == [ promise |-> [old.promise EXCEPT !.state     = req.action.state,
+                                                    !.value     = req.action.value,
+                                                    !.settledAt = now],
+                     task    |-> [old.task EXCEPT !.state          = "fulfilled",
+                                                  !.pid            = NoPid,
+                                                  !.ttl            = NoTime,
+                                                  !.leaseTimeoutAt = NoTime,
+                                                  !.retryTimeoutAt = NoTime,
+                                                  !.resumes        = {}] ]
+        IN  IF /\ old.task.state = "acquired"
                /\ old.promise.state = "pending"
                /\ old.task.version = req.version
-               /\ \A a \in aw : IsExternal(Project(objects[a], now).promise)
-               /\ IF \E a \in aw :
-                        Project(objects[a], now).promise.state /= "pending" THEN
-                      objects' =
-                          Write(objects, req.id, [old EXCEPT !.task.resumes = {}])
-                  ELSE
-                      objects' =
-                          [ i \in DOMAIN objects |->
-                               IF i = req.id THEN
-                                   [old EXCEPT !.task.state          = "suspended",
-                                               !.task.pid            = NoPid,
-                                               !.task.ttl            = NoTime,
-                                               !.task.leaseTimeoutAt = NoTime,
-                                               !.task.retryTimeoutAt = NoTime,
-                                               !.task.resumes        = {}]
-                               ELSE IF i \in aw THEN
-                                   [Project(objects[i], now) EXCEPT
-                                        !.promise.callbacks = @ \cup {req.id}]
-                               ELSE
-                                   objects[i] ]
-        /\ UNCHANGED <<outbox, now>>
+            THEN {Write(o, req.id, new)}
+            ELSE {}
 
-HandleTaskFulfill(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.task.state = "acquired"
-           /\ old.promise.state = "pending"
-           /\ old.task.version = req.version
-           /\ objects' =
-                  Write(objects, req.id,
-                        [ promise |-> [old.promise EXCEPT
-                                        !.state     = req.action.state,
-                                        !.value     = req.action.value,
-                                        !.settledAt = now],
-                        task    |-> [old.task EXCEPT !.state          = "fulfilled",
-                                                     !.pid            = NoPid,
-                                                     !.ttl            = NoTime,
-                                                     !.leaseTimeoutAt = NoTime,
-                                                     !.retryTimeoutAt = NoTime,
-                                                     !.resumes        = {}] ])
-    /\ UNCHANGED <<outbox, now>>
+HandleTaskRelease(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+        IN  IF /\ old.task.state = "acquired"
+               /\ old.promise.state = "pending"
+               /\ old.task.version = req.version
+            THEN {Write(o, req.id,
+                        [old EXCEPT !.task.state          = "pending",
+                                    !.task.pid            = NoPid,
+                                    !.task.ttl            = NoTime,
+                                    !.task.leaseTimeoutAt = NoTime,
+                                    !.task.retryTimeoutAt = now])}
+            ELSE {}
 
-HandleTaskRelease(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.task.state = "acquired"
-           /\ old.promise.state = "pending"
-           /\ old.task.version = req.version
-           /\ objects' =
-                  Write(objects, req.id,
-                        [old EXCEPT !.task.state     = "pending",
-                                  !.task.pid            = NoPid,
-                                  !.task.ttl            = NoTime,
-                                  !.task.leaseTimeoutAt = NoTime,
-                                  !.task.retryTimeoutAt = now])
-    /\ UNCHANGED <<outbox, now>>
+HandleTaskHalt(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+        IN  IF old.task.state \notin {"none", "fulfilled", "halted"}
+            THEN {Write(o, req.id,
+                        [old EXCEPT !.task.state          = "halted",
+                                    !.task.pid            = NoPid,
+                                    !.task.ttl            = NoTime,
+                                    !.task.leaseTimeoutAt = NoTime,
+                                    !.task.retryTimeoutAt = NoTime])}
+            ELSE {}
 
-HandleTaskHalt(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.task.state \notin {"none", "fulfilled", "halted"}
-           /\ objects' =
-                  Write(objects, req.id,
-                        [old EXCEPT !.task.state     = "halted",
-                                  !.task.pid            = NoPid,
-                                  !.task.ttl            = NoTime,
-                                  !.task.leaseTimeoutAt = NoTime,
-                                  !.task.retryTimeoutAt = NoTime])
-    /\ UNCHANGED <<outbox, now>>
-
-HandleTaskContinue(req) ==
-    /\ req.id \in DOMAIN objects
-    /\ LET old == Project(objects[req.id], now)
-       IN
-           /\ old.task.state = "halted"
-           /\ old.promise.state = "pending"
-           /\ objects' =
-                  Write(objects, req.id,
-                        [old EXCEPT !.task.state     = "pending",
-                                  !.task.pid            = NoPid,
-                                  !.task.ttl            = NoTime,
-                                  !.task.leaseTimeoutAt = NoTime,
-                                  !.task.retryTimeoutAt = now])
-    /\ UNCHANGED <<outbox, now>>
+HandleTaskContinue(o, req) ==
+    IF req.id \notin DOMAIN o THEN
+        {}
+    ELSE
+        LET old == Project(o[req.id], now)
+        IN  IF old.task.state = "halted" /\ old.promise.state = "pending"
+            THEN {Write(o, req.id,
+                        [old EXCEPT !.task.state          = "pending",
+                                    !.task.pid            = NoPid,
+                                    !.task.ttl            = NoTime,
+                                    !.task.leaseTimeoutAt = NoTime,
+                                    !.task.retryTimeoutAt = now])}
+            ELSE {}
 
 -----------------------------------------------------------------------------
 
+(* One due action, as the store it produces. The promise, the lease and the
+   callback leave the outbox alone. A retry enqueues Execute; a listener
+   enqueues Unblock. *)
+
+DuePromise(o, b) ==
+    { [ objects |-> Write(o, i, Project(o[i], now)),
+        outbox  |-> b ] :
+        i \in { j \in DOMAIN o :
+                  /\ o[j].promise.state = "pending"
+                  /\ o[j].promise.timeoutAt <= now } }
+
+DueLease(o, b) ==
+    { LET old == o[i]
+      IN  [ objects |-> Write(o, i,
+                    [old EXCEPT !.task.state          = "pending",
+                                !.task.pid            = NoPid,
+                                !.task.ttl            = NoTime,
+                                !.task.leaseTimeoutAt = NoTime,
+                                !.task.retryTimeoutAt = now]),
+            outbox  |-> b ] :
+        i \in { j \in DOMAIN o :
+                  LET old == o[j]
+                  IN  /\ old.task.state = "acquired"
+                      /\ old.task.leaseTimeoutAt /= NoTime
+                      /\ old.task.leaseTimeoutAt <= now
+                      /\ Project(old, now).promise.state = "pending" } }
+
+DueRetry(o, b) ==
+    { LET old == o[i]
+          msg == [ address |-> old.promise.tags.target,
+                   message |-> [ tag     |-> "Execute",
+                                 id      |-> i,
+                                 version |-> old.task.version ] ]
+      IN  [ objects |-> Write(o, i, [old EXCEPT !.task.retryTimeoutAt = now + RetryTimeout]),
+            outbox  |-> { x \in b : MsgKey(x) /= MsgKey(msg) } \cup {msg} ] :
+        i \in { j \in DOMAIN o :
+                  LET old == o[j]
+                  IN  /\ old.task.state = "pending"
+                      /\ old.task.retryTimeoutAt /= NoTime
+                      /\ old.task.retryTimeoutAt <= now
+                      /\ Project(old, now).promise.state = "pending" } }
+
+DueListener(o, b) ==
+    LET ids == { j \in DOMAIN o : Project(o[j], now).promise.state /= "pending" }
+    IN  IF ids = {} THEN
+            {}
+        ELSE
+            UNION { { LET awaited == Project(o[i], now)
+                           msg     == [ address |-> a,
+                                        message |-> [ tag   |-> "Unblock",
+                                                      id    |-> i,
+                                                      state |-> awaited.promise.state ] ]
+                       IN  [ objects |-> Write(o, i, [awaited EXCEPT !.promise.listeners = @ \ {a}]),
+                             outbox  |-> { x \in b : MsgKey(x) /= MsgKey(msg) } \cup {msg} ] :
+                       a \in o[i].promise.listeners } :
+                    i \in ids }
+
+CallbackObjects(o, i, w) ==
+    LET awaited    == Project(o[i], now)
+        newAwaited == [awaited EXCEPT !.promise.callbacks = @ \ {w}]
+        struck     == Write(o, i, newAwaited)
+    IN  IF w \notin DOMAIN o THEN
+            struck
+        ELSE
+            LET awaiter == Project(struck[w], now)
+            IN  IF awaiter.task.state \in {"none", "fulfilled"} THEN
+                    Write(struck, w, awaiter)
+                ELSE IF awaiter.task.state = "suspended" THEN
+                    Write(struck, w,
+                          [awaiter EXCEPT !.task.state          = "pending",
+                                          !.task.pid            = NoPid,
+                                          !.task.ttl            = NoTime,
+                                          !.task.leaseTimeoutAt = NoTime,
+                                          !.task.retryTimeoutAt = now,
+                                          !.task.resumes        = {i}])
+                ELSE
+                    Write(struck, w, [awaiter EXCEPT !.task.resumes = @ \cup {i}])
+
+DueCallback(o, b) ==
+    LET ids == { j \in DOMAIN o : Project(o[j], now).promise.state /= "pending" }
+    IN  IF ids = {} THEN
+            {}
+        ELSE
+            UNION { { [ objects |-> CallbackObjects(o, i, w),
+                        outbox  |-> b ] :
+                      w \in o[i].promise.callbacks } :
+                    i \in ids }
+
+Due1(o, b) ==
+    DuePromise(o, b) \cup DueLease(o, b) \cup DueRetry(o, b)
+        \cup DueListener(o, b) \cup DueCallback(o, b)
+
+(* The same action, named, so fairness can ask for one item with the clock
+   left where it is. A step of `Next` that does exactly this is one of them. *)
 ProcessPromiseTimeout ==
-    \E i \in DOMAIN objects :
-        /\ objects[i].promise.state = "pending"
-        /\ objects[i].promise.timeoutAt <= now
-        /\ objects' = Write(objects, i, Project(objects[i], now))
-        /\ UNCHANGED <<outbox, now>>
+    \E nxt \in DuePromise(objects, outbox) :
+        /\ objects' = nxt.objects
+        /\ outbox'  = nxt.outbox
+        /\ UNCHANGED now
 
 ProcessLeaseTimeout ==
-    \E i \in DOMAIN objects :
-        LET old == objects[i]
-        IN
-            /\ old.task.state = "acquired"
-            /\ old.task.leaseTimeoutAt /= NoTime
-            /\ old.task.leaseTimeoutAt <= now
-            /\ Project(old, now).promise.state = "pending"
-            /\ objects' =
-                   Write(objects, i,
-                         [old EXCEPT !.task.state          = "pending",
-                                     !.task.pid            = NoPid,
-                                     !.task.ttl            = NoTime,
-                                     !.task.leaseTimeoutAt = NoTime,
-                                     !.task.retryTimeoutAt = now])
-            /\ UNCHANGED <<outbox, now>>
+    \E nxt \in DueLease(objects, outbox) :
+        /\ objects' = nxt.objects
+        /\ outbox'  = nxt.outbox
+        /\ UNCHANGED now
 
 ProcessRetryTimeout ==
-    \E i \in DOMAIN objects :
-        LET old == objects[i]
-            msg == [ address |-> objects[i].promise.tags.target,
-                     message |-> [tag |-> "Execute", id      |-> i,
-                                          version |-> objects[i].task.version] ]
-        IN
-            /\ old.task.state = "pending"
-            /\ old.task.retryTimeoutAt /= NoTime
-            /\ old.task.retryTimeoutAt <= now
-            /\ Project(old, now).promise.state = "pending"
-            /\ objects' =
-                   Write(objects, i, [old EXCEPT !.task.retryTimeoutAt = now + RetryTimeout])
-            /\ outbox' = { o \in outbox : MsgKey(o) /= MsgKey(msg) } \cup {msg}
-            /\ UNCHANGED now
+    \E nxt \in DueRetry(objects, outbox) :
+        /\ objects' = nxt.objects
+        /\ outbox'  = nxt.outbox
+        /\ UNCHANGED now
 
 ProcessListener ==
-    \E i \in DOMAIN objects :
-        \E a \in objects[i].promise.listeners :
-            LET awaited == Project(objects[i], now)
-                msg     == [ address |-> a,
-                             message |-> [tag |-> "Unblock", id    |-> i,
-                                                  state |-> Project(objects[i],
-                                                                    now).promise.state] ]
-            IN
-                /\ awaited.promise.state /= "pending"
-                /\ objects' =
-                       Write(objects, i, [awaited EXCEPT !.promise.listeners = @ \ {a}])
-                /\ outbox' = { o \in outbox : MsgKey(o) /= MsgKey(msg) } \cup {msg}
-                /\ UNCHANGED now
+    \E nxt \in DueListener(objects, outbox) :
+        /\ objects' = nxt.objects
+        /\ outbox'  = nxt.outbox
+        /\ UNCHANGED now
 
 ProcessCallback ==
-    \E i \in DOMAIN objects :
-        \E w \in objects[i].promise.callbacks :
-            LET awaited    == Project(objects[i], now)
-                newAwaited == [Project(objects[i], now) EXCEPT
-                                  !.promise.callbacks = @ \ {w}]
-            IN
-                /\ awaited.promise.state /= "pending"
-                /\ \/ /\ w \notin DOMAIN objects
-                      /\ objects' = Write(objects, i, newAwaited)
-                   \/ /\ w \in DOMAIN objects
-                      /\ LET struck  == Write(objects, i, newAwaited)
-                             awaiter == Project(struck[w], now)
-                         IN
-                             IF awaiter.task.state \in {"none", "fulfilled"} THEN
-                                 objects' = Write(struck, w, awaiter)
-                             ELSE
-                                 objects' =
-                                     Write(struck, w,
-                                           IF awaiter.task.state = "suspended" THEN
-                                             [awaiter EXCEPT
-                                                 !.task.state          = "pending",
-                                                 !.task.pid            = NoPid,
-                                                 !.task.ttl            = NoTime,
-                                                 !.task.leaseTimeoutAt = NoTime,
-                                                 !.task.retryTimeoutAt = now,
-                                                 !.task.resumes        = {i}]
-                                         ELSE
-                                             [awaiter EXCEPT
-                                                 !.task.resumes = @ \cup {i}])
-                /\ UNCHANGED <<outbox, now>>
+    \E nxt \in DueCallback(objects, outbox) :
+        /\ objects' = nxt.objects
+        /\ outbox'  = nxt.outbox
+        /\ UNCHANGED now
 
 -----------------------------------------------------------------------------
 
-Due ==
-    \/ ProcessPromiseTimeout
-    \/ ProcessLeaseTimeout
-    \/ ProcessRetryTimeout
-    \/ ProcessListener
-    \/ ProcessCallback
-
-(* A step may take any number of due actions, from none through all, in any
-   order they are enabled, and then a handler. The same chain is also a step
-   by itself. `Sweep(k)` is any such chain of length at most k. The bound is
-   one promise timeout, one lease timeout and one retry per object, plus one
-   listener per address and one callback per id. *)
+(* `Swept` is every store reachable by due actions, including the current
+   one. Any enabled order, any length up to the bound: one promise timeout,
+   one lease timeout and one retry per object, plus one listener per address
+   and one callback per id. *)
 
 MaxSweep ==
     Cardinality(Id) * (Cardinality(Id) + Cardinality(Address) + 3)
 
-RECURSIVE Sweep(_)
-Sweep(k) ==
-    IF k = 0 THEN UNCHANGED <<objects, outbox, now>>
-    ELSE \/ UNCHANGED <<objects, outbox, now>>
-         \/ Due \cdot Sweep(k - 1)
+Swept ==
+    LET R[k \in 0 .. MaxSweep] ==
+            IF k = 0 THEN
+                {[objects |-> objects, outbox |-> outbox]}
+            ELSE
+                LET prev == R[k - 1]
+                IN  prev \cup Flat({Due1(st.objects, st.outbox) : st \in prev})
+    IN  R[MaxSweep]
 
------------------------------------------------------------------------------
+Handled(o) ==
+       Flat({HandlePromiseCreate(o, req) : req \in CreateReq})
+    \cup Flat({HandlePromiseSettle(o, req) : req \in SettleReq})
+    \cup Flat({HandlePromiseRegisterCallback(o, req) : req \in CallbackReq})
+    \cup Flat({HandlePromiseRegisterListener(o, req) : req \in [awaited : Id, address : Address]})
+    \cup Flat({HandleTaskCreate(o, req) : req \in [pid : Pid, ttl : Ttl, action : CreateReq]})
+    \cup Flat({HandleTaskAcquire(o, req) : req \in [id : Id, version : Version, pid : Pid, ttl : Ttl]})
+    \cup Flat({HandleTaskFence(o, i, v) : i \in Id, v \in Version})
+    \cup Flat({HandleTaskHeartbeat(o, req) : req \in [pid : Pid, tasks : SUBSET TaskRefT]})
+    \cup Flat({HandleTaskSuspend(o, req) : req \in [id : Id, version : Version, actions : SUBSET CallbackReq]})
+    \cup Flat({HandleTaskFulfill(o, req) : req \in [id : Id, version : Version, action : SettleReq]})
+    \cup Flat({HandleTaskRelease(o, req) : req \in TaskRefT})
+    \cup Flat({HandleTaskHalt(o, req) : req \in [id : Id]})
+    \cup Flat({HandleTaskContinue(o, req) : req \in [id : Id]})
+
+(* The work is stamped with `now`. The clock may then move forward within
+   the horizon, so a write decided earlier can land after time has passed. *)
+Apply(pre, os) ==
+    /\ objects' = os
+    /\ outbox'  = pre.outbox
+    /\ now' \in now .. MaxTime
 
 Clock ==
     /\ now' = now + 1
@@ -414,37 +463,20 @@ Init ==
     /\ outbox  = {}
     /\ now     = 0
 
-Handler ==
-    \/ \E req \in CreateReq   : HandlePromiseCreate(req)
-    \/ \E req \in SettleReq   : HandlePromiseSettle(req)
-    \/ \E req \in CallbackReq : HandlePromiseRegisterCallback(req)
-    \/ \E req \in [awaited : Id, address : Address] :
-           HandlePromiseRegisterListener(req)
-    \/ \E req \in [pid : Pid, ttl : Ttl, action : CreateReq] :
-           HandleTaskCreate(req)
-    \/ \E req \in [id : Id, version : Version, pid : Pid, ttl : Ttl] :
-           HandleTaskAcquire(req)
-    \/ \E i \in Id, v \in Version : HandleTaskFence(i, v)
-    \/ \E req \in [pid : Pid, tasks : SUBSET TaskRefT] :
-           HandleTaskHeartbeat(req)
-    \/ \E req \in [id : Id, version : Version, actions : SUBSET CallbackReq] :
-           HandleTaskSuspend(req)
-    \/ \E req \in [id : Id, version : Version, action : SettleReq] :
-           HandleTaskFulfill(req)
-    \/ \E req \in TaskRefT : HandleTaskRelease(req)
-    \/ \E req \in [id : Id] : HandleTaskHalt(req)
-    \/ \E req \in [id : Id] : HandleTaskContinue(req)
-
-(* The work is stamped with `now`. The clock may then move forward within
-   the horizon, so a write decided earlier can land after time has passed. *)
-Advance ==
-    /\ now' \in now .. MaxTime
-    /\ UNCHANGED <<objects, outbox>>
-
+(* A step picks a swept store, applies a handler, and may move the clock.
+   Or it is a non-empty sweep with no handler. The clock by itself only ticks. *)
 Next ==
-    \/ (Sweep(MaxSweep) \cdot Handler) \cdot Advance
-    \/ (Due \cdot Sweep(MaxSweep - 1)) \cdot Advance
-    \/ Clock
+    LET reached == Swept
+    IN  \/ \E pre \in reached :
+              \E os \in Handled(pre.objects) :
+                  Apply(pre, os)
+        \/ \E pre \in reached :
+              /\ \/ pre.objects /= objects
+                 \/ pre.outbox /= outbox
+              /\ objects' = pre.objects
+              /\ outbox'  = pre.outbox
+              /\ now' \in now .. MaxTime
+        \/ Clock
 
 Fairness ==
     /\ WF_vars(ProcessPromiseTimeout)

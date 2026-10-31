@@ -1,34 +1,25 @@
 ------------------------------ MODULE Refinement ------------------------------
 (* DOES THE EXECUTOR IMPLEMENT THE PROTOCOL?
 
-   `Abstract` states one protocol step per action. `Concrete` writes a document
-   once, and that one write does several protocol steps at a time -- it sweeps
-   every due deadline and then serves a request. TLA+ refinement is implication,
-   and implication is step by step: each concrete step must be one abstract step
-   or a stutter. So the plain answer is no, and TLC says so with a sweep that
-   timed out one promise and created another in a single write.
+   One abstract step takes any number of due actions, then a handler. `Swept`
+   is the set of stores those actions reach, including the one it started
+   from, so the checker can compute the step under the mapping below. One
+   concrete write does that work in one go, at the instant Process read the
+   clock, and lands it later.
 
-   Abadi and Lamport name this exact case -- "S2 may run slower than S1" -- as
-   one of three reasons a refinement mapping fails to exist, and prescribe the
-   remedy: an auxiliary variable added to the FASTER machine to slow it down.
-   That is `s` below. It walks the stores one write passes through, leaving
-   every real variable alone, and the mapping reads it, so the protocol advances
-   one action per tick while the document stands still. Lamport and Merz call it
-   a stuttering variable; it is not prophecy, which is for the other direction.
+   Abadi and Lamport name a faster machine -- one step where the protocol
+   takes several -- as a reason a refinement mapping needs an auxiliary on
+   that machine. That is `s` below. It walks the stores one write passes
+   through, leaving every real variable alone, and the mapping reads it, so
+   the protocol can advance one action per tick while the document stands
+   still. Lamport and Merz call it a stuttering variable; it is not prophecy,
+   which is for the other direction.
 
    The walk is not stored. It is a function of the document the step decided
    against, the instant it decided, and the request -- and `steps` holds all
    three, none of which move mid-walk. So `s` is a position: who is walking, and
    how far along. That also makes it the well-founded rank the construction
-   needs, since `k` climbs to a computable bound.
-
-   (Action composition would say this directly -- `A \cdot B` is one step that
-   is A then B, Specifying Systems 7.3, the chapter on the grain of atomicity.
-   TLC has an experimental implementation behind a JVM flag, and it cannot be
-   used here: it fabricates the intermediate state, and our mapping is computed
-   from `docs` rather than a plain variable rename, so there is nothing to
-   evaluate it against. It fails with "the identifier docs is either undefined
-   or not an operator".) *)
+   needs, since `k` climbs to a computable bound. *)
 
 (* `at` is the instant Process read the clock, kept on the step. The walk
    replays at that instant, and `clockA` catches the abstract clock up to it
