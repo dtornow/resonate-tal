@@ -592,7 +592,7 @@ Sweep(doc, t) ==
 
 Fresh(ev) ==
     [ ev |-> ev, phase |-> "process", pending |-> << >>,
-      expect |-> EmptyFn ]
+      expect |-> EmptyFn, at |-> NoTime ]
 
 Set(f, k, v) ==
     [x \in (DOMAIN f) \cup {k} |-> IF x = k THEN v ELSE f[x]]
@@ -624,6 +624,7 @@ Process(r) ==
            dels  == swept.dels  \o out.dels
            sends == swept.sends \o out.sends
        IN  steps' = [steps EXCEPT ![r].phase   = "perform",
+                                  ![r].at      = now,
                                   ![r].pending =
                                       [ n \in 1 .. Len(puts) |->
                                           [tag |-> "PutTimeout", entry |-> puts[n]] ]

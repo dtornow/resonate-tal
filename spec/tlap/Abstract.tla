@@ -435,9 +435,15 @@ Handler ==
     \/ \E req \in [id : Id] : HandleTaskHalt(req)
     \/ \E req \in [id : Id] : HandleTaskContinue(req)
 
+(* The work is stamped with `now`. The clock may then move forward within
+   the horizon, so a write decided earlier can land after time has passed. *)
+Advance ==
+    /\ now' \in now .. MaxTime
+    /\ UNCHANGED <<objects, outbox>>
+
 Next ==
-    \/ Sweep(MaxSweep) \cdot Handler
-    \/ Due \cdot Sweep(MaxSweep - 1)
+    \/ (Sweep(MaxSweep) \cdot Handler) \cdot Advance
+    \/ (Due \cdot Sweep(MaxSweep - 1)) \cdot Advance
     \/ Clock
 
 Fairness ==

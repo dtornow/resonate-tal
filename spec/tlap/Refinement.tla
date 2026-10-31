@@ -30,13 +30,9 @@
    evaluate it against. It fails with "the identifier docs is either undefined
    or not an operator".) *)
 
-(* TWO MORE AUXILIARIES, both confined to this module.
-
-   `stamp` is a history variable: the instant each request's Process read the
-   clock. The executor does not keep it -- its fence is the CAS and nothing
-   else -- but the walk must replay the computation, and the computation was a
-   function of the document AND the instant. History is the legitimate way to
-   remember what the implementation legitimately forgot.
+(* `at` is the instant Process read the clock, kept on the step. The walk
+   replays at that instant, and `clockA` catches the abstract clock up to it
+   before the write is explained.
 
    The outbox mapping reads pending. An abstract message step strikes the
    document and enqueues the message in one action; the executor splits it --
@@ -47,14 +43,14 @@
    value at all -- a stutter, as it must be. *)
 EXTENDS Concrete
 
-VARIABLES s, stamp, clockA
+VARIABLES s, clockA
 
 (* `top` marks "not mid-walk". A record, so it cannot collide with a position. *)
 top ==
     [top |-> "top"]
 
 varsS ==
-    <<s, stamp, clockA, docs, timeouts, outbox, steps, now>>
+    <<s, clockA, docs, timeouts, outbox, steps, now>>
 
 -----------------------------------------------------------------------------
 
@@ -255,7 +251,7 @@ Step(d, it, t0) ==
    produces, and the refinement check would say so. *)
 Walk(r) ==
     LET d0    == docs[OriginOf(steps[r].ev)]
-        t0    == stamp[r]
+        t0    == steps[r].at
         its   == Items(d0, t0)
         store[n \in 0 .. Len(its)] ==
             IF n = 0 THEN
@@ -286,23 +282,23 @@ Walked(r) ==
     /\ steps[r].pending /= << >>
     /\ Head(steps[r].pending).tag = "PutDocument"
     /\ docs[OriginOf(steps[r].ev)] = steps[r].expect
-    /\ clockA <= stamp[r]
+    /\ clockA <= steps[r].at
     /\ LET k == IF s = top THEN 0 ELSE s.k
        IN
-           IF clockA < stamp[r] THEN
+           IF clockA < steps[r].at THEN
                /\ s' = IF s = top THEN [req |-> r, k |-> 0] ELSE s
                /\ clockA' = clockA + 1
-               /\ UNCHANGED <<stamp, docs, timeouts, outbox, steps, now>>
+               /\ UNCHANGED <<docs, timeouts, outbox, steps, now>>
            ELSE IF k < Len(Walk(r)) THEN
                /\ s' = IF s = top THEN [req |-> r, k |-> 1]
                        ELSE [s EXCEPT !.k = @ + 1]
-               /\ UNCHANGED <<stamp, clockA, docs, timeouts, outbox, steps, now>>
+               /\ UNCHANGED <<clockA, docs, timeouts, outbox, steps, now>>
            ELSE
                /\ s' = top
                /\ docs'  = [docs EXCEPT
                                 ![OriginOf(steps[r].ev)] = Head(steps[r].pending).body]
                /\ steps' = [steps EXCEPT ![r].pending = Tail(@)]
-               /\ UNCHANGED <<stamp, clockA, timeouts, outbox, now>>
+               /\ UNCHANGED <<clockA, timeouts, outbox, now>>
 
 (* `Concrete`'s next-state relation, with the write replaced by the walk and
    everything else held still while one is in progress. Nothing may interleave
@@ -312,26 +308,20 @@ Walked(r) ==
 NextS ==
     \/ /\ s = top
        /\ UNCHANGED <<s, clockA>>
-       /\ \/ /\ \/ \E ev \in ExternalEvent : SubmitExternal(ev)
-                \/ \E e \in timeouts : SubmitInternal(e)
-                \/ Clock
-             /\ UNCHANGED stamp
+       /\ \/ \E ev \in ExternalEvent : SubmitExternal(ev)
+          \/ \E e \in timeouts : SubmitInternal(e)
+          \/ Clock
           \/ \E r \in DOMAIN steps :
-                \/ /\ Process(r)
-                   /\ stamp' = Set(stamp, r, now)
-                \/ /\ Crash(r)
-                   /\ stamp' = Del(stamp, r)
+                \/ Process(r)
+                \/ Crash(r)
                 \/ /\ Perform(r)
                    /\ ~( /\ steps[r].pending /= << >>
                          /\ Head(steps[r].pending).tag = "PutDocument"
                          /\ docs[OriginOf(steps[r].ev)] = steps[r].expect )
-                   /\ stamp' = IF steps[r].pending = << >>
-                               THEN Del(stamp, r)
-                               ELSE stamp
     \/ \E r \in DOMAIN steps : Walked(r)
 
 InitS ==
-    Init /\ s = top /\ stamp = EmptyFn /\ clockA = 0
+    Init /\ s = top /\ clockA = 0
 
 SpecS ==
     InitS /\ [][NextS]_varsS
@@ -385,17 +375,17 @@ P == INSTANCE Abstract WITH
                     ELSE SendsInto(Outstanding, At.sends)
 
 (* THE PREMISE OF THE LAGGING CLOCK, checked rather than assumed: the abstract
-   clock never passes the stamp of a write that can still land. Per document
-   the CAS enforces it -- a later-stamped landing kills every earlier-stamped
-   holder's expect -- so this can only break across documents, where
-   out-of-stamp-order landings would need prophecy. One origin, no prophecy. *)
+   clock never passes the `at` of a write that can still land. Per document
+   the CAS enforces it -- a later landing kills every earlier one's expect --
+   so this can only break across documents, where out-of-order landings would
+   need prophecy. One origin, no prophecy. *)
 HoldersWalkable ==
     \A r \in DOMAIN steps :
         ( /\ steps[r].phase = "perform"
           /\ \E n \in DOMAIN steps[r].pending :
                  steps[r].pending[n].tag = "PutDocument"
           /\ docs[OriginOf(steps[r].ev)] = steps[r].expect )
-        => clockA <= stamp[r]
+        => clockA <= steps[r].at
 
 Refines ==
     P!Safety
