@@ -1,0 +1,425 @@
+------------------------------- MODULE Slice -------------------------------
+(* One origin's timeout pass, planted into the whole store, is the timeout
+   chain of that origin's due promises. The other origins stay. *)
+EXTENDS Plant
+
+LEMMA PlantId ==
+    ASSUME NEW base, NEW o, NEW doc,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, doc) = base
+PROOF
+    <1> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+    <1> DEFINE dom == kept \cup DOMAIN doc
+    <1>1. \A i : i \in dom <=> i \in DOMAIN base
+        BY DEF kept, dom
+    <1>2. dom = DOMAIN base
+        BY <1>1, SetExtensionality DEF dom
+    <1>3. \A i \in DOMAIN base :
+            (IF i \in DOMAIN doc THEN doc[i] ELSE base[i]) = base[i]
+        BY Z3
+    <1>4. Plant(base, o, doc)
+            = [ i \in dom |-> IF i \in DOMAIN doc THEN doc[i] ELSE base[i] ]
+        BY DEF Plant, kept, dom
+    <1>5. [ i \in dom |-> IF i \in DOMAIN doc THEN doc[i] ELSE base[i] ]
+            = [ i \in DOMAIN base |-> base[i] ]
+        BY <1>2, <1>3, ExtCtor
+    <1>6. QED
+        BY <1>4, <1>5
+
+LEMMA PlantImage ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S \subseteq DOMAIN doc,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, Image(doc, S, t)) = Image(base, S, t)
+PROOF
+    <1>1. CASE S = {}
+        <2>1. Image(doc, S, t) = doc /\ Image(base, S, t) = base
+            BY <1>1 DEF Image
+        <2>2. Plant(base, o, doc) = base
+            BY PlantId
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>2. CASE S # {}
+        <2> DEFINE body ==
+                [ i \in DOMAIN doc |->
+                    IF i \in S THEN P!Project(doc[i], t) ELSE doc[i] ]
+        <2> DEFINE full ==
+                [ i \in DOMAIN base |->
+                    IF i \in S THEN P!Project(base[i], t) ELSE base[i] ]
+        <2>1. Image(doc, S, t) = body
+            BY <1>2 DEF Image, BulkP, body
+        <2>2. Image(base, S, t) = full
+            BY <1>2 DEF Image, BulkP, full
+        <2>3. DOMAIN body = DOMAIN doc
+            BY DomCtor DEF body
+        <2> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+        <2> DEFINE dom == kept \cup DOMAIN body
+        <2>4. \A i : i \in dom <=> i \in DOMAIN base
+            BY <2>3 DEF kept, dom
+        <2>5. dom = DOMAIN base
+            BY <2>4, SetExtensionality DEF dom
+        <2>6. \A i \in DOMAIN base :
+                (IF i \in DOMAIN body THEN body[i] ELSE base[i]) = full[i]
+            <3> SUFFICES ASSUME NEW k \in DOMAIN base
+                         PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                                  = full[k]
+                OBVIOUS
+            <3>1. k \in DOMAIN doc => base[k] = doc[k]
+                BY <2>3
+            <3>2. QED
+                BY <2>3, <3>1, Zenon DEF body, full
+        <2>7. Plant(base, o, body)
+                = [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+            BY DEF Plant, kept, dom
+        <2>8. [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+                = full
+            BY <2>5, <2>6, ExtCtor DEF full
+        <2>9. QED
+            BY <2>1, <2>2, <2>7, <2>8
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA DueSlice ==
+    ASSUME NEW base, NEW doc, NEW o, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  S \subseteq DueP(base, t)
+PROOF
+    <1>1. ASSUME NEW k \in S
+          PROVE  k \in DueP(base, t)
+        <2>1. k \in DOMAIN doc
+              /\ doc[k].promise.state = "pending"
+              /\ doc[k].promise.timeoutAt <= t
+            BY <1>1
+        <2>2. k \in DOMAIN base /\ base[k] = doc[k]
+            BY <2>1
+        <2>3. base[k].promise.state = "pending"
+              /\ base[k].promise.timeoutAt <= t
+            BY <2>1, <2>2
+        <2>4. QED
+            BY <2>2, <2>3 DEF DueP
+    <1>2. QED
+        BY <1>1
+
+LEMMA SubCap ==
+    ASSUME NEW S, S \subseteq Id
+    PROVE  /\ IsFiniteSet(S)
+           /\ Cardinality(S) \in 0 .. P!MaxSweep
+PROOF
+    <1>1. IsFiniteSet(Id) /\ Cardinality(Id) <= P!MaxSweep /\ P!MaxSweep \in Nat
+        BY FiniteOrigin, FiniteRest, IdFinite, SweepCap
+    <1>2. IsFiniteSet(S) /\ Cardinality(S) <= Cardinality(Id)
+        BY <1>1, FS_Subset
+    <1>3. Cardinality(S) \in Nat /\ Cardinality(Id) \in Nat
+        BY <1>1, <1>2, FS_CardinalityType
+    <1>4. QED
+        BY <1>1, <1>2, <1>3, Z3
+
+LEMMA TimeoutPlant ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, SweepTimeoutAt(doc, t).doc) = Image(base, S, t)
+PROOF
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. SweepTimeoutAt(doc, t).doc = Image(doc, S, t)
+        BY TimeoutDoc
+    <1>3. QED
+        BY <1>1, <1>2, PlantImage
+
+LEMMA TimeoutChain ==
+    ASSUME NEW base, NEW box, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  /\ ReachN(base, box, t,
+                     Plant(base, o, SweepTimeoutAt(doc, t).doc),
+                     box, Cardinality(S))
+           /\ Cardinality(S) \in 0 .. P!MaxSweep
+PROOF
+    <1>1. S \subseteq DueP(base, t)
+        BY DueSlice
+    <1>2. S \subseteq Id
+        BY <1>1, DueSubset, Z3
+    <1>3. IsFiniteSet(S) /\ Cardinality(S) \in 0 .. P!MaxSweep
+        BY <1>2, SubCap
+    <1>4. Plant(base, o, SweepTimeoutAt(doc, t).doc) = Image(base, S, t)
+        BY TimeoutPlant
+    <1>5. ReachN(base, box, t, Image(base, S, t), box, Cardinality(S))
+        BY <1>1, <1>3, TimeoutSub
+    <1>6. QED
+        BY <1>3, <1>4, <1>5
+
+(* After the origin's own timeout image, every id of that document is
+   already projected. Listener and callback passes ask for exactly that. *)
+LEMMA SliceFixed ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  \A k \in DOMAIN doc :
+              P!Project(Image(doc, S, t)[k], t) = Image(doc, S, t)[k]
+PROOF
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  P!Project(Image(doc, S, t)[k], t) = Image(doc, S, t)[k]
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                   = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>1, <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k] = P!Project(doc[k], t)
+                BY <2>1, <2>2
+            <3>2. QED
+                BY <3>1, ProjectTwice
+        <2>3. CASE k \notin S
+            <3>1. Image(doc, S, t)[k] = doc[k]
+                BY <2>1, <2>3
+            <3>2. \/ doc[k].promise.state /= "pending"
+                  \/ ~(doc[k].promise.timeoutAt <= t)
+                BY <1>2, <2>3, Zenon
+            <3>3. P!Project(doc[k], t) = doc[k]
+                BY <3>2, ProjectId
+            <3>4. QED
+                BY <3>1, <3>3
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>2
+
+LEMMA ListenersKept ==
+    ASSUME NEW obj, NEW t
+    PROVE  P!Project(obj, t).promise.listeners = obj.promise.listeners
+PROOF
+    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
+        <2> DEFINE p == P!Project(obj, t)
+        <2> DEFINE st == IF obj.promise.tags.timer THEN "resolved"
+                         ELSE "rejectedTimedout"
+        <2> DEFINE p1 == [obj.promise EXCEPT !.state = st]
+        <2> DEFINE p2 == [p1 EXCEPT !.value = NoValue]
+        <2> DEFINE p3 == [p2 EXCEPT !.settledAt = obj.promise.timeoutAt]
+        <2>1. p1.listeners = obj.promise.listeners
+            BY ONLY Z3 DEF p1
+        <2>2. p2.listeners = p1.listeners /\ p3.listeners = p2.listeners
+            BY ONLY Z3 DEF p2, p3
+        <2>3. p.promise = p3
+            BY ONLY <1>1, Zenon DEF p, st, p1, p2, p3, P!Project
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
+        BY <1>2, ProjectId
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA ImageDom ==
+    ASSUME NEW doc, NEW t, NEW S, S \subseteq DOMAIN doc
+    PROVE  DOMAIN Image(doc, S, t) = DOMAIN doc
+PROOF
+    <1>1. CASE S = {}
+        BY <1>1 DEF Image
+    <1>2. CASE S # {}
+        <2>1. Image(doc, S, t) = BulkP(doc, S, t)
+            BY <1>2 DEF Image
+        <2>2. DOMAIN BulkP(doc, S, t) = DOMAIN doc
+            BY DomCtor DEF BulkP
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA ListenersOn ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+              Image(doc, S, t)[k].promise.listeners \subseteq Address
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(doc, S, t)[k].promise.listeners \subseteq Address
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                   = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k].promise.listeners
+                    = doc[k].promise.listeners
+                BY <2>1, <2>2, ListenersKept
+            <3>2. QED
+                BY <1>2, <2>2, <3>1
+        <2>3. CASE k \notin S
+            BY <1>2, <2>1, <2>3
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA ListenAfter ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address
+    PROVE  SweepListeners(Image(doc, S, t), t).doc
+              = ImgN(Image(doc, S, t), DueN(Image(doc, S, t), t))
+PROOF
+    <1> DEFINE im == Image(doc, S, t)
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. DOMAIN im = DOMAIN doc
+        BY <1>1, ImageDom DEF im
+    <1>3. \A k \in DOMAIN im : P!Project(im[k], t) = im[k]
+        BY <1>2, SliceFixed DEF im
+    <1>4. \A k \in DOMAIN im : im[k].promise.listeners \subseteq Address
+        BY <1>1, ListenersOn DEF im
+    <1>5. QED
+        BY <1>3, <1>4, ListenDoc DEF im
+
+LEMMA SameStruck ==
+    ASSUME NEW a, NEW b, NEW G, a = b
+    PROVE  Struck(a, G) = Struck(b, G)
+PROOF
+    BY ONLY Zenon DEF Struck
+
+LEMMA SameBody ==
+    ASSUME NEW a, NEW b, NEW Q, NEW j, a[j] = b[j]
+    PROVE  BodyN(a, Q, j) = BodyN(b, Q, j)
+PROOF
+    <1>1. CASE Gone(j, Q) = {}
+        <2>1. BodyN(a, Q, j)
+                = (LET g == Gone(j, Q)
+                   IN  IF g = {} THEN a[j] ELSE Struck(a[j], g))
+            BY BodyWhen
+        <2>2. BodyN(a, Q, j) = a[j]
+            BY ONLY <1>1, <2>1, Zenon
+        <2>3. BodyN(b, Q, j)
+                = (LET g == Gone(j, Q)
+                   IN  IF g = {} THEN b[j] ELSE Struck(b[j], g))
+            BY BodyWhen
+        <2>4. BodyN(b, Q, j) = b[j]
+            BY ONLY <1>1, <2>3, Zenon
+        <2>5. QED
+            BY <2>2, <2>4
+    <1>2. CASE Gone(j, Q) # {}
+        <2>1. BodyN(a, Q, j)
+                = (LET g == Gone(j, Q)
+                   IN  IF g = {} THEN a[j] ELSE Struck(a[j], g))
+            BY BodyWhen
+        <2>2. BodyN(a, Q, j) = Struck(a[j], Gone(j, Q))
+            BY ONLY <1>2, <2>1, Zenon
+        <2>3. BodyN(b, Q, j)
+                = (LET g == Gone(j, Q)
+                   IN  IF g = {} THEN b[j] ELSE Struck(b[j], g))
+            BY BodyWhen
+        <2>4. BodyN(b, Q, j) = Struck(b[j], Gone(j, Q))
+            BY ONLY <1>2, <2>3, Zenon
+        <2>5. Struck(a[j], Gone(j, Q)) = Struck(b[j], Gone(j, Q))
+            BY SameStruck
+        <2>6. QED
+            BY <2>2, <2>4, <2>5
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA IdleBody ==
+    ASSUME NEW store, NEW j, NEW non, NEW P,
+           j \notin non,
+           P \subseteq [id : non, address : Address]
+    PROVE  BodyN(store, P, j) = store[j]
+PROOF
+    <1>1. Gone(j, P) = {}
+        BY GoneOut
+    <1>2. BodyN(store, P, j)
+            = (LET g == Gone(j, P)
+               IN  IF g = {} THEN store[j] ELSE Struck(store[j], g))
+        BY BodyWhen
+    <1>3. QED
+        BY ONLY <1>1, <1>2, Zenon
+
+(* A listener image of one document, planted, is the listener image of the
+   whole store on those same pairs. Pairs outside the document are absent. *)
+LEMMA PlantN ==
+    ASSUME NEW base, NEW o, NEW doc, NEW P,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           P \subseteq [id : DOMAIN doc, address : Address]
+    PROVE  Plant(base, o, ImgN(doc, P)) = ImgN(base, P)
+PROOF
+    <1>1. CASE P = {}
+        <2>1. ImgN(doc, P) = doc /\ ImgN(base, P) = base
+            BY <1>1 DEF ImgN
+        <2>2. Plant(base, o, doc) = base
+            BY PlantId
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>2. CASE P # {}
+        <2> DEFINE body == [ j \in DOMAIN doc |-> BodyN(doc, P, j) ]
+        <2> DEFINE full == [ j \in DOMAIN base |-> BodyN(base, P, j) ]
+        <2>1. ImgN(doc, P) = body
+            BY <1>2 DEF ImgN, body
+        <2>2. ImgN(base, P) = full
+            BY <1>2 DEF ImgN, full
+        <2>3. DOMAIN body = DOMAIN doc
+            BY DomCtor DEF body
+        <2> DEFINE kept == { q \in DOMAIN base : q.origin /= o }
+        <2> DEFINE dom == kept \cup DOMAIN body
+        <2>4. \A n : n \in dom <=> n \in DOMAIN base
+            BY <2>3 DEF kept, dom
+        <2>5. dom = DOMAIN base
+            BY <2>4, SetExtensionality DEF dom
+        <2>6. \A n \in DOMAIN base :
+                (IF n \in DOMAIN body THEN body[n] ELSE base[n]) = full[n]
+            <3> SUFFICES ASSUME NEW k \in DOMAIN base
+                         PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                                  = full[k]
+                OBVIOUS
+            <3>1. full[k] = BodyN(base, P, k)
+                BY Zenon DEF full
+            <3>2. CASE k \in DOMAIN doc
+                <4>1. k \in DOMAIN body /\ body[k] = BodyN(doc, P, k)
+                    BY <2>3, <3>2, Zenon DEF body
+                <4>2. base[k] = doc[k]
+                    BY <3>2, Zenon
+                <4>3. BodyN(base, P, k) = BodyN(doc, P, k)
+                    BY <4>2, SameBody
+                <4>4. QED
+                    BY <3>1, <4>1, <4>3
+            <3>3. CASE k \notin DOMAIN doc
+                <4>1. k \notin DOMAIN body
+                    BY <2>3, <3>3
+                <4>2. BodyN(base, P, k) = base[k]
+                    BY <3>3, IdleBody
+                <4>3. QED
+                    BY <3>1, <4>1, <4>2
+            <3>4. QED
+                BY <3>2, <3>3
+        <2>7. Plant(base, o, body)
+                = [ n \in dom |-> IF n \in DOMAIN body THEN body[n] ELSE base[n] ]
+            BY DEF Plant, kept, dom
+        <2>8. [ n \in dom |-> IF n \in DOMAIN body THEN body[n] ELSE base[n] ]
+                = full
+            BY <2>5, <2>6, ExtCtor DEF full
+        <2>9. QED
+            BY <2>1, <2>2, <2>7, <2>8
+    <1>3. QED
+        BY <1>1, <1>2
+
+===============================================================================
