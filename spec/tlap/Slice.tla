@@ -1404,4 +1404,216 @@ PROOF
     <1>18. QED
         BY <1>12, <1>13, <1>16, <1>17, ReachCat DEF mid, boxL, calls
 
+LEMMA CallsKept ==
+    ASSUME NEW obj, NEW t
+    PROVE  P!Project(obj, t).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
+        <2> DEFINE p == P!Project(obj, t)
+        <2> DEFINE st == IF obj.promise.tags.timer THEN "resolved"
+                         ELSE "rejectedTimedout"
+        <2> DEFINE p1 == [obj.promise EXCEPT !.state = st]
+        <2> DEFINE p2 == [p1 EXCEPT !.value = NoValue]
+        <2> DEFINE p3 == [p2 EXCEPT !.settledAt = obj.promise.timeoutAt]
+        <2>1. p1.callbacks = obj.promise.callbacks
+            BY ONLY Z3 DEF p1
+        <2>2. p2.callbacks = p1.callbacks /\ p3.callbacks = p2.callbacks
+            BY ONLY Z3 DEF p2, p3
+        <2>3. p.promise = p3
+            BY ONLY <1>1, Zenon DEF p, st, p1, p2, p3, P!Project
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
+        BY <1>2, ProjectId
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA CallsOn ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+              Image(doc, S, t)[k].promise.callbacks \subseteq Id
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(doc, S, t)[k].promise.callbacks \subseteq Id
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                   = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k].promise.callbacks
+                    = doc[k].promise.callbacks
+                BY <2>1, <2>2, CallsKept
+            <3>2. QED
+                BY <1>2, <2>2, <3>1
+        <2>3. CASE k \notin S
+            BY <1>2, <2>1, <2>3
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA EtaImgN ==
+    ASSUME NEW base, NEW Q,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  ImgN(base, Q)
+              = [ i \in DOMAIN ImgN(base, Q) |-> ImgN(base, Q)[i] ]
+PROOF
+    <1>1. CASE Q = {}
+        <2>1. ImgN(base, Q) = base
+            BY <1>1 DEF ImgN
+        <2>2. DOMAIN ImgN(base, Q) = DOMAIN base
+            BY <2>1
+        <2>3. QED
+            BY <2>1, <2>2, Zenon
+    <1>2. CASE Q # {}
+        <2> DEFINE f == [ j \in DOMAIN base |-> BodyN(base, Q, j) ]
+        <2>1. ImgN(base, Q) = f
+            BY <1>2 DEF ImgN, f
+        <2>2. DOMAIN f = DOMAIN base
+            BY DomCtor DEF f
+        <2>3. \A k \in DOMAIN base : f[k] = BodyN(base, Q, k)
+            BY Zenon DEF f
+        <2>4. f = [ i \in DOMAIN f |-> f[i] ]
+            BY <2>2, <2>3, ExtCtor DEF f
+        <2>5. QED
+            BY <2>1, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* The concrete callback document, planted into the listener store, is the
+   callback image that ThreePass reaches. *)
+LEMMA CallPlant ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  Plant(ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
+                 o,
+                 SweepCallbacks(ImgN(Image(doc, S, t),
+                                     DueN(Image(doc, S, t), t)), t).doc)
+              = ImgC(ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
+                     DueC(ImgN(Image(doc, S, t),
+                               DueN(Image(doc, S, t), t)), t),
+                     t)
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE calls == DueC(docL, t)
+    <1>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>1, <1>2, ImageDom DEF imD, imB
+    <1>4. \A k \in DOMAIN imD : imD[k].promise.callbacks \subseteq Id
+        BY <1>1, CallsOn DEF imD
+    <1>5. \A k \in DOMAIN imD : P!Project(imD[k], t) = imD[k]
+        BY <1>3, SliceFixed DEF imD
+    <1>6. SweepCallbacks(docL, t).doc = ImgC(docL, calls, t)
+        BY <1>4, <1>5, CallAfter DEF docL, pairs, imD, calls
+    <1>7. imB = [ i \in DOMAIN imB |-> imB[i] ]
+        BY <1>2, EtaImage DEF imB
+    <1>8. mid = [ i \in DOMAIN mid |-> mid[i] ]
+        BY <1>7, EtaImgN DEF mid, pairs, imB
+    <1>9. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        <2>1. CASE pairs = {}
+            <3>1. docL = imD /\ mid = imB
+                BY <2>1 DEF docL, mid, ImgN
+            <3>2. QED
+                BY <3>1
+        <2>2. CASE pairs # {}
+            <3> DEFINE bD == [ j \in DOMAIN imD |-> BodyN(imD, pairs, j) ]
+            <3> DEFINE bB == [ j \in DOMAIN imB |-> BodyN(imB, pairs, j) ]
+            <3>1. docL = bD /\ mid = bB
+                BY <2>2 DEF docL, mid, ImgN, bD, bB
+            <3>2. DOMAIN bD = DOMAIN imD /\ DOMAIN bB = DOMAIN imB
+                BY DomCtor DEF bD, bB
+            <3>3. QED
+                BY <3>1, <3>2
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>10. DOMAIN docL = { i \in DOMAIN mid : i.origin = o }
+        BY <1>3, <1>9, Zenon
+    <1>11. ASSUME NEW k \in DOMAIN imD
+           PROVE  imB[k] = imD[k]
+        <2>1. k \in DOMAIN doc /\ k \in DOMAIN base
+            BY <1>3, <1>11, Zenon
+        <2>2. base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>3. imD[k] = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>1, <2>1, ImageVal DEF imD
+        <2>4. imB[k] = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <1>2, <2>1, ImageVal DEF imB
+        <2>5. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>2, Zenon
+        <2>6. QED
+            BY <2>2, <2>3, <2>4, <2>5, Z3
+    <1>12. \A k \in DOMAIN docL : mid[k] = docL[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN docL
+                     PROVE  mid[k] = docL[k]
+            OBVIOUS
+        <2>1. k \in DOMAIN imD /\ k \in DOMAIN imB /\ imB[k] = imD[k]
+            BY <1>1, <1>3, <1>9, <1>11, Zenon
+        <2>2. CASE pairs = {}
+            <3>1. docL = imD /\ mid = imB
+                BY <2>2 DEF docL, mid, ImgN
+            <3>2. QED
+                BY <2>1, <3>1
+        <2>3. CASE pairs # {}
+            <3> DEFINE bD == [ j \in DOMAIN imD |-> BodyN(imD, pairs, j) ]
+            <3> DEFINE bB == [ j \in DOMAIN imB |-> BodyN(imB, pairs, j) ]
+            <3>1. docL = bD /\ mid = bB
+                BY <2>3 DEF docL, mid, ImgN, bD, bB
+            <3>2. bD[k] = BodyN(imD, pairs, k)
+                BY <2>1, Zenon DEF bD
+            <3>3. bB[k] = BodyN(imB, pairs, k)
+                BY <2>1, Zenon DEF bB
+            <3>4. BodyN(imB, pairs, k) = BodyN(imD, pairs, k)
+                BY <2>1, SameBody
+            <3>5. QED
+                BY <3>1, <3>2, <3>3, <3>4
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>13. calls \subseteq [id : DOMAIN docL, awaiter : Id]
+        BY AwSub DEF calls, docL
+    <1>14. \A y \in calls :
+              y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+        <2>1. \A y \in [id : DOMAIN docL, awaiter : Id] :
+                y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+            <3> SUFFICES ASSUME NEW y \in [id : DOMAIN docL, awaiter : Id],
+                                y.awaiter \in DOMAIN mid
+                         PROVE  y.awaiter \in DOMAIN docL
+                OBVIOUS
+            <3>1. DOMAIN docL = DOMAIN doc /\ DOMAIN mid = DOMAIN base
+                BY <1>3, <1>9, Zenon
+            <3>2. y \in [id : DOMAIN doc, awaiter : Id]
+                BY <3>1, Zenon
+            <3>3. y.awaiter \in DOMAIN base
+                BY <3>1, Zenon
+            <3>4. y.awaiter \in DOMAIN doc
+                BY <3>2, <3>3, Zenon
+            <3>5. QED
+                BY <3>1, <3>4, Zenon
+        <2>2. QED
+            BY <2>1, LocalDue DEF calls, docL, mid
+    <1>15. Plant(mid, o, ImgC(docL, calls, t)) = ImgC(mid, calls, t)
+        BY <1>8, <1>10, <1>12, <1>13, <1>14, PlantC DEF mid, docL, calls
+    <1>16. QED
+        BY <1>6, <1>15 DEF mid, docL, calls
+
 ===============================================================================
