@@ -1844,4 +1844,155 @@ PROOF
     <1>5. QED
         BY <1>2, <1>4, RetrySub DEF exp
 
+(* Projecting a due promise fulfills its task, so an acquired or pending
+   task that remains still has the lease or retry time the due sets ask for. *)
+LEMMA ShapeObj ==
+    ASSUME NEW obj, NEW t,
+           obj.task.state = "acquired" =>
+               /\ obj.task.leaseTimeoutAt /= NoTime
+               /\ obj.promise.state = "pending",
+           obj.task.state = "pending" =>
+               /\ obj.task.retryTimeoutAt /= NoTime
+               /\ obj.promise.state = "pending"
+    PROVE  /\ P!Project(obj, t).task.state = "acquired" =>
+                 /\ P!Project(obj, t).task.leaseTimeoutAt /= NoTime
+                 /\ P!Project(obj, t).promise.state = "pending"
+           /\ P!Project(obj, t).task.state = "pending" =>
+                 /\ P!Project(obj, t).task.retryTimeoutAt /= NoTime
+                 /\ P!Project(obj, t).promise.state = "pending"
+PROOF
+    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
+        <2> DEFINE p == P!Project(obj, t)
+        <2> DEFINE ts == IF obj.task.state = "none" THEN "none" ELSE "fulfilled"
+        <2> DEFINE task1 ==
+                [obj.task EXCEPT !.state          = ts,
+                                 !.pid            = NoPid,
+                                 !.ttl            = P!NoTime,
+                                 !.leaseTimeoutAt = P!NoTime,
+                                 !.retryTimeoutAt = P!NoTime,
+                                 !.resumes        = {}]
+        <2>1. p.task = task1
+            BY <1>1, Z3 DEF p, ts, task1, P!Project
+        <2>2. task1.state = ts
+            BY Z3 DEF task1
+        <2>3. ts = "none" \/ ts = "fulfilled"
+            BY Z3 DEF ts
+        <2>4. p.task.state /= "acquired" /\ p.task.state /= "pending"
+            BY <2>1, <2>2, <2>3, Zenon
+        <2>5. QED
+            BY <2>4, Zenon DEF p
+    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
+        <2>1. P!Project(obj, t) = obj
+            BY <1>2, ProjectId
+        <2>2. QED
+            BY <2>1, Zenon
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA LeaseOn ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+               Image(doc, S, t)[k].task.state = "acquired" =>
+                   /\ Image(doc, S, t)[k].task.leaseTimeoutAt /= NoTime
+                   /\ Image(doc, S, t)[k].promise.state = "pending"
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(doc, S, t)[k].task.state = "acquired" =>
+                     /\ Image(doc, S, t)[k].task.leaseTimeoutAt /= NoTime
+                     /\ Image(doc, S, t)[k].promise.state = "pending"
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                    = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k] = P!Project(doc[k], t)
+                BY <2>1, <2>2
+            <3>2. doc[k].task.state = "acquired" =>
+                      /\ doc[k].task.leaseTimeoutAt /= NoTime
+                      /\ doc[k].promise.state = "pending"
+                BY <1>2, Zenon
+            <3>3. doc[k].task.state = "pending" =>
+                      /\ doc[k].task.retryTimeoutAt /= NoTime
+                      /\ doc[k].promise.state = "pending"
+                BY <1>2, Zenon
+            <3>4. P!Project(doc[k], t).task.state = "acquired" =>
+                      /\ P!Project(doc[k], t).task.leaseTimeoutAt /= NoTime
+                      /\ P!Project(doc[k], t).promise.state = "pending"
+                BY <3>2, <3>3, ShapeObj
+            <3>5. QED
+                BY <3>1, <3>4, Zenon
+        <2>3. CASE k \notin S
+            <3>1. Image(doc, S, t)[k] = doc[k]
+                BY <2>1, <2>3
+            <3>2. QED
+                BY <1>2, <3>1, Zenon
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA RetryOn ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+               Image(doc, S, t)[k].task.state = "pending" =>
+                   /\ Image(doc, S, t)[k].task.retryTimeoutAt /= NoTime
+                   /\ Image(doc, S, t)[k].promise.state = "pending"
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(doc, S, t)[k].task.state = "pending" =>
+                     /\ Image(doc, S, t)[k].task.retryTimeoutAt /= NoTime
+                     /\ Image(doc, S, t)[k].promise.state = "pending"
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                    = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k] = P!Project(doc[k], t)
+                BY <2>1, <2>2
+            <3>2. doc[k].task.state = "acquired" =>
+                      /\ doc[k].task.leaseTimeoutAt /= NoTime
+                      /\ doc[k].promise.state = "pending"
+                BY <1>2, Zenon
+            <3>3. doc[k].task.state = "pending" =>
+                      /\ doc[k].task.retryTimeoutAt /= NoTime
+                      /\ doc[k].promise.state = "pending"
+                BY <1>2, Zenon
+            <3>4. P!Project(doc[k], t).task.state = "pending" =>
+                      /\ P!Project(doc[k], t).task.retryTimeoutAt /= NoTime
+                      /\ P!Project(doc[k], t).promise.state = "pending"
+                BY <3>2, <3>3, ShapeObj
+            <3>5. QED
+                BY <3>1, <3>4, Zenon
+        <2>3. CASE k \notin S
+            <3>1. Image(doc, S, t)[k] = doc[k]
+                BY <2>1, <2>3
+            <3>2. QED
+                BY <1>2, <3>1, Zenon
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
 ===============================================================================
