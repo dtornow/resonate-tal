@@ -835,4 +835,55 @@ PROOF
     <1>7. QED
         BY <1>3, <1>4, <1>6, ReachCat DEF imB, pairs
 
+(* Dropping listeners does not disturb a projection that is already the
+   identity, so the callback pass can start from the listener image. *)
+LEMMA StillFixed ==
+    ASSUME NEW doc, NEW t, NEW Q, NEW k, NEW obj,
+           k \in DOMAIN doc,
+           obj = doc[k],
+           P!Project(obj, t) = obj
+    PROVE  /\ k \in DOMAIN ImgN(doc, Q)
+           /\ P!Project(ImgN(doc, Q)[k], t) = ImgN(doc, Q)[k]
+PROOF
+    <1>0. P!Project(doc[k], t) = doc[k]
+        BY Zenon
+    <1>1. CASE Q = {}
+        <2>1. ImgN(doc, Q) = doc
+            BY <1>1 DEF ImgN
+        <2>2. QED
+            BY <1>0, <2>1, Zenon
+    <1>2. CASE Q # {}
+        <2> DEFINE im == [ j \in DOMAIN doc |-> BodyN(doc, Q, j) ]
+        <2>1. ImgN(doc, Q) = im
+            BY <1>2 DEF ImgN, im
+        <2>2. DOMAIN im = DOMAIN doc
+            BY DomCtor DEF im
+        <2>3. im[k] = BodyN(doc, Q, k)
+            BY Zenon DEF im
+        <2>4. CASE Gone(k, Q) = {}
+            <3>1. BodyN(doc, Q, k)
+                    = (LET g == Gone(k, Q)
+                       IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                BY BodyWhen
+            <3>2. BodyN(doc, Q, k) = doc[k]
+                BY ONLY <2>4, <3>1, Zenon
+            <3>3. QED
+                BY <1>0, <2>1, <2>2, <2>3, <3>2, Zenon
+        <2>5. CASE Gone(k, Q) # {}
+            <3>1. BodyN(doc, Q, k)
+                    = (LET g == Gone(k, Q)
+                       IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                BY BodyWhen
+            <3>2. BodyN(doc, Q, k) = Struck(doc[k], Gone(k, Q))
+                BY ONLY <2>5, <3>1, Zenon
+            <3>3. P!Project(Struck(doc[k], Gone(k, Q)), t)
+                    = Struck(doc[k], Gone(k, Q))
+                BY <1>0, ProjectDrop
+            <3>4. QED
+                BY <2>1, <2>2, <2>3, <3>2, <3>3, Zenon
+        <2>6. QED
+            BY <2>4, <2>5
+    <1>3. QED
+        BY <1>1, <1>2
+
 ===============================================================================
