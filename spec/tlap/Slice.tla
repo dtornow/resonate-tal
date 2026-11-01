@@ -886,4 +886,101 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+(* Listeners do not touch callbacks, so the callback pass of the listener
+   image is the abstract callback image of that same document. *)
+LEMMA CallAfter ==
+    ASSUME NEW doc, NEW t, NEW Q,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k]
+    PROVE  SweepCallbacks(ImgN(doc, Q), t).doc
+              = ImgC(ImgN(doc, Q), DueC(ImgN(doc, Q), t), t)
+PROOF
+    <1> DEFINE im == ImgN(doc, Q)
+    <1>1. ASSUME NEW k \in DOMAIN im
+          PROVE  im[k].promise.callbacks \subseteq Id
+        <2>1. CASE Q = {}
+            <3>1. im = doc
+                BY <2>1 DEF im, ImgN
+            <3>2. k \in DOMAIN doc /\ im[k] = doc[k]
+                BY <1>1, <3>1
+            <3>3. QED
+                BY <3>2
+        <2>2. CASE Q # {}
+            <3> DEFINE body == [ j \in DOMAIN doc |-> BodyN(doc, Q, j) ]
+            <3>1. im = body /\ DOMAIN body = DOMAIN doc
+                BY <2>2, DomCtor DEF im, ImgN, body
+            <3>2. k \in DOMAIN doc /\ body[k] = BodyN(doc, Q, k)
+                BY <1>1, <3>1, Zenon DEF body
+            <3>3. doc[k].promise.callbacks \subseteq Id
+                BY <3>2
+            <3>4. CASE Gone(k, Q) = {}
+                <4>1. BodyN(doc, Q, k)
+                        = (LET g == Gone(k, Q)
+                           IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                    BY BodyWhen
+                <4>2. BodyN(doc, Q, k) = doc[k]
+                    BY ONLY <3>4, <4>1, Zenon
+                <4>3. QED
+                    BY <3>1, <3>2, <3>3, <4>2
+            <3>5. CASE Gone(k, Q) # {}
+                <4> DEFINE s == Struck(doc[k], Gone(k, Q))
+                <4>1. BodyN(doc, Q, k)
+                        = (LET g == Gone(k, Q)
+                           IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                    BY BodyWhen
+                <4>2. BodyN(doc, Q, k) = s
+                    BY ONLY <3>5, <4>1, Zenon DEF s
+                <4>3. s.promise.callbacks = doc[k].promise.callbacks
+                    BY ONLY Zenon DEF s, Struck
+                <4>4. QED
+                    BY <3>1, <3>2, <3>3, <4>2, <4>3
+            <3>6. QED
+                BY <3>4, <3>5
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>2. ASSUME NEW k \in DOMAIN im
+          PROVE  P!Project(im[k], t) = im[k]
+        <2>1. CASE Q = {}
+            <3>1. im = doc
+                BY <2>1 DEF im, ImgN
+            <3>2. k \in DOMAIN doc /\ im[k] = doc[k]
+                BY <1>2, <3>1
+            <3>3. QED
+                BY <3>2
+        <2>2. CASE Q # {}
+            <3> DEFINE body == [ j \in DOMAIN doc |-> BodyN(doc, Q, j) ]
+            <3>1. im = body /\ DOMAIN body = DOMAIN doc
+                BY <2>2, DomCtor DEF im, ImgN, body
+            <3>2. k \in DOMAIN doc /\ im[k] = BodyN(doc, Q, k)
+                BY <1>2, <3>1, Zenon DEF body, im
+            <3>3. P!Project(doc[k], t) = doc[k]
+                BY <3>2
+            <3>4. CASE Gone(k, Q) = {}
+                <4>1. BodyN(doc, Q, k)
+                        = (LET g == Gone(k, Q)
+                           IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                    BY BodyWhen
+                <4>2. BodyN(doc, Q, k) = doc[k]
+                    BY ONLY <3>4, <4>1, Zenon
+                <4>3. QED
+                    BY <3>2, <3>3, <4>2
+            <3>5. CASE Gone(k, Q) # {}
+                <4> DEFINE s == Struck(doc[k], Gone(k, Q))
+                <4>1. BodyN(doc, Q, k)
+                        = (LET g == Gone(k, Q)
+                           IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                    BY BodyWhen
+                <4>2. BodyN(doc, Q, k) = s
+                    BY ONLY <3>5, <4>1, Zenon DEF s
+                <4>3. P!Project(s, t) = s
+                    BY <3>3, ProjectDrop DEF s
+                <4>4. QED
+                    BY <3>2, <4>2, <4>3
+            <3>6. QED
+                BY <3>4, <3>5
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2, CallDoc DEF im
+
 ===============================================================================
