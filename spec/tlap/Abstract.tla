@@ -171,6 +171,8 @@ HandleTaskFence(o, i, v, t) ==
             ELSE
                 {}
 
+(* The whole beat, and also the beat of a single origin. The executor
+   writes one document, so a heartbeat names one origin's tasks. *)
 HandleTaskHeartbeat(o, req, t) ==
     LET beat == { i \in DOMAIN o :
                     LET old == Project(o[i], t)
@@ -179,15 +181,13 @@ HandleTaskHeartbeat(o, req, t) ==
                         /\ old.task.state = "acquired"
                         /\ old.task.pid = req.pid
                         /\ old.promise.state = "pending" }
+        upd(i) == LET old == Project(o[i], t)
+                  IN  [old EXCEPT !.task.leaseTimeoutAt = t + old.task.ttl]
+        at(keep) == [ i \in DOMAIN o |-> IF i \in keep THEN upd(i) ELSE o[i] ]
     IN  IF beat = {} THEN
             {}
         ELSE
-            {[ i \in DOMAIN o |->
-                 IF i \in beat THEN
-                     LET old == Project(o[i], t)
-                     IN  [old EXCEPT !.task.leaseTimeoutAt = t + old.task.ttl]
-                 ELSE
-                     o[i] ]}
+            {at(beat)} \cup { at({ j \in beat : j.origin = p }) : p \in Origin }
 
 HandleTaskSuspend(o, req, t) ==
     LET aw == {a.awaited : a \in req.actions}

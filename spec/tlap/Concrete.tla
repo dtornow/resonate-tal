@@ -226,9 +226,8 @@ HandleTaskFence(req, doc, t) ==
     ELSE
         LET old == Project(doc[req.id], t)
         IN
-            IF \/ (IF req.action.tag = "Create"
-                   THEN req.action.req.id
-                   ELSE req.action.req.id) = req.id
+            IF \/ req.action.req.id = req.id
+               \/ req.action.req.id.origin /= req.id.origin
                \/ old.task.state /= "acquired"
                \/ old.promise.state /= "pending"
                \/ old.task.version /= req.version THEN
@@ -249,6 +248,9 @@ HandleTaskHeartbeat(req, doc, t) ==
         q    == SetToSeq({ i \in beat :
                              t + doc[i].task.ttl /= doc[i].task.leaseTimeoutAt })
     IN
+        IF beat = {} THEN
+            Skip(doc)
+        ELSE
         [ doc   |-> [ i \in DOMAIN doc |->
                          IF i \in beat THEN
                              LET old == Project(doc[i], t)
@@ -483,6 +485,9 @@ SweepTimeoutAt(doc, t) ==
         ql == SetToSeq({ i \in S : doc[i].task.state = "acquired" })
         qr == SetToSeq({ i \in S : doc[i].task.state = "pending" })
     IN
+    IF S = {} THEN
+        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+    ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
                     IF i \in S THEN Project(doc[i], t) ELSE doc[i] ],
       puts  |-> << >>,
@@ -494,14 +499,65 @@ SweepTimeoutAt(doc, t) ==
                        [at |-> doc[qr[n]].task.retryTimeoutAt,      id |-> qr[n], kind |-> "retry"] ],
       sends |-> << >> ]
 
+(* The same record a listener step writes: every field kept, the
+   addresses gone. *)
+DropListeners(obj) ==
+    [ promise |-> [ state     |-> obj.promise.state,
+                    param     |-> obj.promise.param,
+                    value     |-> obj.promise.value,
+                    tags      |-> obj.promise.tags,
+                    timeoutAt |-> obj.promise.timeoutAt,
+                    createdAt |-> obj.promise.createdAt,
+                    settledAt |-> obj.promise.settledAt,
+                    callbacks |-> obj.promise.callbacks,
+                    listeners |-> {} ],
+      task    |-> obj.task ]
+
+DropCallbacks(obj) ==
+    [ promise |-> [ state     |-> obj.promise.state,
+                    param     |-> obj.promise.param,
+                    value     |-> obj.promise.value,
+                    tags      |-> obj.promise.tags,
+                    timeoutAt |-> obj.promise.timeoutAt,
+                    createdAt |-> obj.promise.createdAt,
+                    settledAt |-> obj.promise.settledAt,
+                    callbacks |-> {},
+                    listeners |-> obj.promise.listeners ],
+      task    |-> obj.task ]
+
+Wake(obj, src, t) ==
+    [ promise |-> obj.promise,
+      task    |-> [ state          |-> "pending",
+                    version        |-> obj.task.version,
+                    ttl            |-> NoTime,
+                    pid            |-> NoPid,
+                    leaseTimeoutAt |-> NoTime,
+                    retryTimeoutAt |-> t,
+                    resumes        |-> src ] ]
+
+AddResumes(obj, R) ==
+    [ promise |-> obj.promise,
+      task    |-> [ state          |-> obj.task.state,
+                    version        |-> obj.task.version,
+                    ttl            |-> obj.task.ttl,
+                    pid            |-> obj.task.pid,
+                    leaseTimeoutAt |-> obj.task.leaseTimeoutAt,
+                    retryTimeoutAt |-> obj.task.retryTimeoutAt,
+                    resumes        |-> obj.task.resumes \cup R ] ]
+
 SweepListeners(doc, t) ==
-    LET q == SetToSeq({ x \in [id : { i \in DOMAIN doc : doc[i].promise.state /= "pending" },
-                              address : Address] :
-                          x.address \in doc[x.id].promise.listeners })
+    LET pairs == { x \in [id : { i \in DOMAIN doc : doc[i].promise.state /= "pending" },
+                          address : Address] :
+                      x.address \in doc[x.id].promise.listeners }
+        q == SetToSeq(pairs)
     IN
+    IF pairs = {} THEN
+        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+    ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
-                    IF doc[i].promise.state /= "pending" THEN
-                        [doc[i] EXCEPT !.promise.listeners = {}]
+                    IF doc[i].promise.state /= "pending"
+                       /\ doc[i].promise.listeners /= {} THEN
+                        DropListeners(doc[i])
                     ELSE
                         doc[i] ],
       puts  |-> << >>,
@@ -520,23 +576,22 @@ SweepCallbacks(doc, t) ==
         Woken      == { x.awaiter : x \in S } \cap DOMAIN doc
         q  == SetToSeq({ w \in Woken : doc[w].task.state = "suspended" })
     IN
+    IF S = {} THEN
+        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+    ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
-                    LET struck == IF doc[i].promise.state /= "pending" THEN
-                                      [doc[i] EXCEPT !.promise.callbacks = {}]
+                    LET struck == IF doc[i].promise.state /= "pending"
+                                     /\ doc[i].promise.callbacks /= {} THEN
+                                      DropCallbacks(doc[i])
                                   ELSE
                                       doc[i]
                     IN
                         IF i \notin Woken \/ struck.task.state \in {"none", "fulfilled"} THEN
                             struck
                         ELSE IF struck.task.state = "suspended" THEN
-                            [struck EXCEPT !.task.state          = "pending",
-                                           !.task.pid            = NoPid,
-                                           !.task.ttl            = NoTime,
-                                           !.task.leaseTimeoutAt = NoTime,
-                                           !.task.retryTimeoutAt = t,
-                                           !.task.resumes        = Resumes(i)]
+                            Wake(struck, Resumes(i), t)
                         ELSE
-                            [struck EXCEPT !.task.resumes = @ \cup Resumes(i)] ],
+                            AddResumes(struck, Resumes(i)) ],
       puts  |-> [ n \in 1 .. Len(q) |-> [at |-> t, id |-> q[n], kind |-> "retry"] ],
       dels  |-> << >>,
       sends |-> << >> ]
@@ -546,6 +601,9 @@ SweepExpiresAt(doc, t) ==
                  doc[i].task.state = "acquired" /\ doc[i].task.leaseTimeoutAt <= t }
         q == SetToSeq(S)
     IN
+    IF S = {} THEN
+        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+    ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
                     IF i \in S THEN
                         [ doc[i] EXCEPT !.task.state          = "pending",
@@ -565,6 +623,9 @@ SweepRetryAt(doc, t) ==
                  doc[i].task.state = "pending" /\ doc[i].task.retryTimeoutAt <= t }
         q == SetToSeq(S)
     IN
+    IF S = {} THEN
+        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+    ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
                     IF i \in S THEN
                         [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
