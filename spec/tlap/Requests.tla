@@ -72,14 +72,19 @@ ASSUME MaxVersion >= 0
    which is only in the future -- and so retires its own trigger -- while
    RetryTimeout is positive. *)
 ASSUME RetryTimeout > 0
+(* A sweep counts due items. That count is a number only when the sets it
+   ranges over are finite, which is the model the executor is. *)
+ASSUME IsFiniteSet(Origin)
+ASSUME IsFiniteSet(Rest)
+ASSUME IsFiniteSet(Address)
 
 (* THE UNIQUE FUNCTION WITH EMPTY DOMAIN. A store with nothing in it. TLA+
    writes it as the empty sequence, a sequence being a function on 1..n. *)
 EmptyFn ==
     << >>
 
-Write(doc, i, obj) ==
-    [ x \in (DOMAIN doc) \cup {i} |-> IF x = i THEN obj ELSE doc[x] ]
+Write(doc, id, obj) ==
+    [ k \in (DOMAIN doc) \cup {id} |-> IF k = id THEN obj ELSE doc[k] ]
 
 (* A SET IN SOME ORDER. Which order is not stated and must not matter -- this
    is here only because a list of things to do has to be a list. *)

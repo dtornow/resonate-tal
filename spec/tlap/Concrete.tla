@@ -646,35 +646,67 @@ Process(r) ==
                                   ![r].expect  = docs[o]]
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
-Perform(r) ==
+(* Each arm is its own action. A proof can name the one that happened.
+   Together they are the old `Perform`. *)
+PerformDone(r) ==
     /\ r \in DOMAIN steps
     /\ steps[r].phase = "perform"
-    /\ IF steps[r].pending = << >> THEN
-           /\ steps' = Del(steps, r)
+    /\ steps[r].pending = << >>
+    /\ steps' = Del(steps, r)
+    /\ UNCHANGED <<docs, timeouts, outbox, now>>
+
+PerformPutTimeout(r) ==
+    /\ r \in DOMAIN steps
+    /\ steps[r].phase = "perform"
+    /\ steps[r].pending /= << >>
+    /\ LET e    == Head(steps[r].pending)
+           rest == [steps EXCEPT ![r].pending = Tail(@)]
+       IN  /\ e.tag = "PutTimeout"
+           /\ timeouts' = timeouts \cup {e.entry}
+           /\ steps'    = rest
+           /\ UNCHANGED <<docs, outbox, now>>
+
+PerformPut(r) ==
+    /\ r \in DOMAIN steps
+    /\ steps[r].phase = "perform"
+    /\ steps[r].pending /= << >>
+    /\ LET e    == Head(steps[r].pending)
+           rest == [steps EXCEPT ![r].pending = Tail(@)]
+       IN  /\ e.tag = "PutDocument"
+           /\ docs[OriginOf(steps[r].ev)] = steps[r].expect
+           /\ docs'   = [docs EXCEPT ![OriginOf(steps[r].ev)] = e.body]
+           /\ outbox' = Deliver(outbox, e.sends)
+           /\ steps'  = rest
+           /\ UNCHANGED <<timeouts, now>>
+
+PerformMiss(r) ==
+    /\ r \in DOMAIN steps
+    /\ steps[r].phase = "perform"
+    /\ steps[r].pending /= << >>
+    /\ LET e == Head(steps[r].pending)
+       IN  /\ e.tag = "PutDocument"
+           /\ docs[OriginOf(steps[r].ev)] /= steps[r].expect
+           /\ steps' = [steps EXCEPT ![r].phase   = "process",
+                                     ![r].pending = << >>]
            /\ UNCHANGED <<docs, timeouts, outbox, now>>
-       ELSE
-           LET e    == Head(steps[r].pending)
-               rest == [steps EXCEPT ![r].pending = Tail(@)]
-           IN
-               CASE e.tag = "PutTimeout" ->
-                        /\ timeouts' = timeouts \cup {e.entry}
-                        /\ steps'    = rest
-                        /\ UNCHANGED <<docs, outbox, now>>
-                 [] e.tag = "PutDocument" ->
-                        IF docs[OriginOf(steps[r].ev)] = steps[r].expect THEN
-                            /\ docs'    = [docs EXCEPT
-                                               ![OriginOf(steps[r].ev)] = e.body]
-                            /\ outbox'  = Deliver(outbox, e.sends)
-                            /\ steps'   = rest
-                            /\ UNCHANGED <<timeouts, now>>
-                        ELSE
-                            /\ steps' = [steps EXCEPT ![r].phase   = "process",
-                                                      ![r].pending = << >>]
-                            /\ UNCHANGED <<docs, timeouts, outbox, now>>
-                 [] e.tag = "DelTimeout" ->
-                        /\ timeouts' = timeouts \ {e.entry}
-                        /\ steps'    = rest
-                        /\ UNCHANGED <<docs, outbox, now>>
+
+PerformDelTimeout(r) ==
+    /\ r \in DOMAIN steps
+    /\ steps[r].phase = "perform"
+    /\ steps[r].pending /= << >>
+    /\ LET e    == Head(steps[r].pending)
+           rest == [steps EXCEPT ![r].pending = Tail(@)]
+       IN  /\ e.tag = "DelTimeout"
+           /\ timeouts' = timeouts \ {e.entry}
+           /\ steps'    = rest
+           /\ UNCHANGED <<docs, outbox, now>>
+
+Perform(r) ==
+    \/ PerformDone(r)
+    \/ PerformPutTimeout(r)
+    \/ PerformPut(r)
+    \/ PerformMiss(r)
+    \/ PerformDelTimeout(r)
 
 Crash(r) ==
     /\ r \in DOMAIN steps
