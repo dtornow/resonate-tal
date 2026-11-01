@@ -422,4 +422,417 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+LEMMA EtaImage ==
+    ASSUME NEW base, NEW t, NEW S,
+           S \subseteq DOMAIN base,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Image(base, S, t)
+              = [ i \in DOMAIN Image(base, S, t) |-> Image(base, S, t)[i] ]
+PROOF
+    <1>1. CASE S = {}
+        <2>1. Image(base, S, t) = base
+            BY <1>1 DEF Image
+        <2>2. DOMAIN Image(base, S, t) = DOMAIN base
+            BY ImageDom
+        <2>3. QED
+            BY <2>1, <2>2, Zenon
+    <1>2. CASE S # {}
+        <2> DEFINE f ==
+                [ i \in DOMAIN base |->
+                    IF i \in S THEN P!Project(base[i], t) ELSE base[i] ]
+        <2>1. Image(base, S, t) = f
+            BY <1>2 DEF Image, BulkP, f
+        <2>2. DOMAIN f = DOMAIN base
+            BY DomCtor DEF f
+        <2>3. \A k \in DOMAIN base :
+                f[k] = (IF k \in S THEN P!Project(base[k], t) ELSE base[k])
+            BY Zenon DEF f
+        <2>4. f = [ i \in DOMAIN f |-> f[i] ]
+            BY <2>2, <2>3, ExtCtor DEF f
+        <2>5. QED
+            BY <2>1, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA SliceAgree ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  /\ DOMAIN Image(doc, S, t)
+              = { i \in DOMAIN Image(base, S, t) : i.origin = o }
+           /\ \A k \in DOMAIN Image(doc, S, t) :
+                 Image(base, S, t)[k] = Image(doc, S, t)[k]
+PROOF
+    <1>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY <1>1, ImageDom
+    <1>4. DOMAIN Image(base, S, t) = DOMAIN base
+        BY <1>2, ImageDom
+    <1>5. DOMAIN Image(doc, S, t)
+            = { i \in DOMAIN Image(base, S, t) : i.origin = o }
+        BY <1>3, <1>4, Zenon
+    <1>6. ASSUME NEW k \in DOMAIN Image(doc, S, t)
+          PROVE  Image(base, S, t)[k] = Image(doc, S, t)[k]
+        <2>1. k \in DOMAIN doc /\ k \in DOMAIN base
+            BY <1>3, <1>4, <1>6, Zenon
+        <2>2. base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>3. Image(doc, S, t)[k]
+                = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>1, <2>1, ImageVal
+        <2>4. Image(base, S, t)[k]
+                = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <1>2, <2>1, ImageVal
+        <2>5. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>2, Zenon
+        <2>6. QED
+            BY <2>2, <2>3, <2>4, <2>5, Z3
+    <1>7. QED
+        BY <1>5, <1>6
+
+LEMMA SlicePt ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S, NEW k,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           k \in DOMAIN Image(doc, S, t)
+    PROVE  Image(base, S, t)[k] = Image(doc, S, t)[k]
+PROOF
+    <1>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY <1>1, ImageDom
+    <1>4. DOMAIN Image(base, S, t) = DOMAIN base
+        BY <1>2, ImageDom
+    <1>5. k \in DOMAIN doc /\ k \in DOMAIN base
+        BY <1>3, <1>4, Zenon
+    <1>6. base[k] = doc[k]
+        BY <1>5, Zenon
+    <1>7. Image(doc, S, t)[k]
+            = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+        BY <1>1, <1>5, ImageVal
+    <1>8. Image(base, S, t)[k]
+            = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+        BY <1>2, <1>5, ImageVal
+    <1>9. P!Project(base[k], t) = P!Project(doc[k], t)
+        BY <1>6, Zenon
+    <1>10. QED
+        BY <1>6, <1>7, <1>8, <1>9, Z3
+
+LEMMA SliceDom ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  DOMAIN Image(doc, S, t)
+              = { i \in DOMAIN Image(base, S, t) : i.origin = o }
+PROOF
+    <1>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY <1>1, ImageDom
+    <1>4. DOMAIN Image(base, S, t) = DOMAIN base
+        BY <1>2, ImageDom
+    <1>5. QED
+        BY <1>3, <1>4, Zenon
+
+LEMMA InDue ==
+    ASSUME NEW o, NEW t, NEW p
+    PROVE  p \in DueN(o, t)
+            <=> /\ p \in [id : { q \in DOMAIN o :
+                                   P!Project(o[q], t).promise.state /= "pending" },
+                          address : Address]
+                /\ p.address \in o[p.id].promise.listeners
+PROOF
+    BY ONLY Zenon DEF DueN, Ids
+
+LEMMA PairsSub ==
+    ASSUME NEW base, NEW doc, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  DueN(doc, t) \subseteq DueN(base, t)
+PROOF
+    <1>1. ASSUME NEW p \in DueN(doc, t)
+          PROVE  p \in DueN(base, t)
+        <2> DEFINE ids ==
+                { q \in DOMAIN doc :
+                    P!Project(doc[q], t).promise.state /= "pending" }
+        <2>1. /\ p \in [id : ids, address : Address]
+              /\ p.address \in doc[p.id].promise.listeners
+            BY <1>1, InDue DEF ids
+        <2>2. p.id \in ids /\ p.address \in Address
+            BY <2>1, Z3
+        <2>3. p.id \in DOMAIN doc /\ base[p.id] = doc[p.id]
+            BY <2>2, Zenon DEF ids
+        <2>4. p.id \in DOMAIN base
+            BY <2>3, Zenon
+        <2>5. P!Project(base[p.id], t) = P!Project(doc[p.id], t)
+            BY <2>3, Zenon
+        <2>6. p.id \in { q \in DOMAIN base :
+                           P!Project(base[q], t).promise.state /= "pending" }
+            BY <2>2, <2>4, <2>5, Zenon DEF ids
+        <2>7. p = [id |-> p.id, address |-> p.address]
+            BY <2>1, RecPair
+        <2>8. p \in [id : { q \in DOMAIN base :
+                              P!Project(base[q], t).promise.state /= "pending" },
+                     address : Address]
+              /\ p.address \in base[p.id].promise.listeners
+            BY <2>1, <2>3, <2>6, <2>7, Zenon
+        <2>9. QED
+            BY <2>8, InDue
+    <1>2. QED
+        BY <1>1
+
+LEMMA FixedAt ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+              P!Project(Image(base, S, t)[k], t) = Image(base, S, t)[k]
+PROOF
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. ASSUME NEW k \in DOMAIN Image(doc, S, t)
+          PROVE  P!Project(Image(base, S, t)[k], t) = Image(base, S, t)[k]
+        <2>1. k \in DOMAIN doc
+            BY <1>1, <1>2, ImageDom, Zenon
+        <2>2. S \subseteq DOMAIN base /\ k \in DOMAIN base
+            BY <1>1, <2>1, Zenon
+        <2>3. base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>4. Image(doc, S, t)[k]
+                = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>1, <2>1, ImageVal
+        <2>5. Image(base, S, t)[k]
+                = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <2>1, <2>2, ImageVal
+        <2>6. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>3, Zenon
+        <2>7. Image(base, S, t)[k] = Image(doc, S, t)[k]
+            BY <2>3, <2>4, <2>5, <2>6, Z3
+        <2>8. P!Project(Image(doc, S, t)[k], t) = Image(doc, S, t)[k]
+            BY <2>1, SliceFixed
+        <2>9. QED
+            BY <2>7, <2>8, Z3
+    <1>3. QED
+        BY <1>2
+
+LEMMA ReachSame ==
+    ASSUME NEW base, NEW box, NEW t, NEW os, NEW os2, NEW b, NEW n,
+           ReachN(base, box, t, os, b, n),
+           os = os2
+    PROVE  ReachN(base, box, t, os2, b, n)
+PROOF
+    <1>1. \E chain :
+            /\ chain[0] = Store(base, box)
+            /\ StepOk(chain, t, n)
+            /\ chain[n] = Store(os, b)
+        BY DEF ReachN
+    <1>2. Store(os, b) = Store(os2, b)
+        BY Z3 DEF Store
+    <1>3. QED
+        BY <1>1, <1>2, Zenon DEF ReachN
+
+(* Listener pairs of the timeout image are due in the planted store, so
+   the listener pass is a chain from that store. *)
+LEMMA ListenFrom ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address
+    PROVE  ReachN(Image(base, S, t), box, t,
+                  ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
+                  BoxN(box, Image(base, S, t), DueN(Image(doc, S, t), t), t),
+                  Cardinality(DueN(Image(doc, S, t), t)))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. DOMAIN doc \subseteq DOMAIN base /\ S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>1, <1>2, ImageDom DEF imD, imB
+    <1>4. DOMAIN imD \subseteq Id /\ DOMAIN imB \subseteq Id
+        BY <1>2, <1>3, Zenon
+    <1>5. IsFiniteSet(pairs)
+        BY <1>4, PairFinite DEF pairs, imD
+    <1>6. ASSUME NEW k \in DOMAIN imD
+          PROVE  imB[k] = imD[k]
+        <2>1. k \in DOMAIN Image(doc, S, t)
+            BY DEF imD
+        <2>2. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+            BY Zenon
+        <2>3. S \subseteq DOMAIN base /\ DOMAIN Image(doc, S, t) = DOMAIN doc
+            BY <2>2, ImageDom
+        <2>4. k \in DOMAIN doc /\ k \in DOMAIN base
+            BY <2>1, <2>2, <2>3, Zenon
+        <2>5. base[k] = doc[k]
+            BY <2>4, Zenon
+        <2>6. Image(doc, S, t)[k]
+                = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <2>2, <2>4, ImageVal
+        <2>7. Image(base, S, t)[k]
+                = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <2>3, <2>4, ImageVal
+        <2>8. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>5, Zenon
+        <2>9. Image(base, S, t)[k] = Image(doc, S, t)[k]
+            BY <2>5, <2>6, <2>7, <2>8, Z3
+        <2>10. QED
+            BY <2>9 DEF imB, imD
+    <1>7. DOMAIN imD \subseteq DOMAIN imB
+        BY <1>2, <1>3, Zenon
+    <1>8. pairs \subseteq DueN(imB, t)
+        BY <1>6, <1>7, PairsSub DEF pairs, imD, imB
+    <1>9. \A y \in pairs : P!Project(imB[y.id], t) = imB[y.id]
+        <2> SUFFICES ASSUME NEW y \in pairs
+                     PROVE  P!Project(imB[y.id], t) = imB[y.id]
+            OBVIOUS
+        <2>1. y \in [id : DOMAIN imD, address : Address]
+            BY PairSubset DEF pairs, imD
+        <2>2. y.id \in DOMAIN imD
+            BY <2>1, Z3
+        <2>3. y.id \in DOMAIN doc
+            BY <1>3, <2>2
+        <2>4. \A j \in DOMAIN Image(doc, S, t) :
+                P!Project(Image(base, S, t)[j], t) = Image(base, S, t)[j]
+            BY FixedAt
+        <2>5. QED
+            BY <2>2, <2>4, Z3 DEF imB, imD
+    <1>10. QED
+        BY <1>4, <1>5, <1>8, <1>9, ListenOn DEF pairs, imB
+
+LEMMA ListenPlant ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address
+    PROVE  Plant(Image(base, S, t), o, SweepListeners(Image(doc, S, t), t).doc)
+              = ImgN(Image(base, S, t), DueN(Image(doc, S, t), t))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1>1. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. SweepListeners(imD, t).doc = ImgN(imD, pairs)
+        BY ListenAfter DEF imD, pairs
+    <1>4. imB = [ i \in DOMAIN imB |-> imB[i] ]
+        BY <1>2, EtaImage DEF imB
+    <1>5. DOMAIN imD = { i \in DOMAIN imB : i.origin = o }
+        BY SliceDom DEF imB, imD
+    <1>5b. ASSUME NEW k \in DOMAIN imD
+           PROVE  imB[k] = imD[k]
+        <2>1. k \in DOMAIN Image(doc, S, t)
+            BY DEF imD
+        <2>2. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+            BY Zenon
+        <2>3. S \subseteq DOMAIN base /\ DOMAIN Image(doc, S, t) = DOMAIN doc
+            BY <2>2, ImageDom
+        <2>4. k \in DOMAIN doc /\ k \in DOMAIN base
+            BY <2>1, <2>2, <2>3, Zenon
+        <2>5. base[k] = doc[k]
+            BY <2>4, Zenon
+        <2>6. Image(doc, S, t)[k]
+                = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <2>2, <2>4, ImageVal
+        <2>7. Image(base, S, t)[k]
+                = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <2>3, <2>4, ImageVal
+        <2>8. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>5, Zenon
+        <2>9. Image(base, S, t)[k] = Image(doc, S, t)[k]
+            BY <2>5, <2>6, <2>7, <2>8, Z3
+        <2>10. QED
+            BY <2>9 DEF imB, imD
+    <1>6. pairs \subseteq [id : DOMAIN imD, address : Address]
+        BY PairSubset DEF pairs, imD
+    <1>7. Plant(imB, o, ImgN(imD, pairs)) = ImgN(imB, pairs)
+        BY <1>4, <1>5, <1>5b, <1>6, PlantN DEF imB, imD, pairs
+    <1>8. QED
+        BY <1>3, <1>7 DEF imB, pairs
+
+LEMMA TwoPass ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address
+    PROVE  ReachN(base, box, t,
+                  ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
+                  BoxN(box, Image(base, S, t), DueN(Image(doc, S, t), t), t),
+                  Cardinality(S) + Cardinality(DueN(Image(doc, S, t), t)))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1>1. /\ ReachN(base, box, t,
+                    Plant(base, o, SweepTimeoutAt(doc, t).doc),
+                    box, Cardinality(S))
+          /\ Cardinality(S) \in 0 .. P!MaxSweep
+        BY TimeoutChain
+    <1>2. Plant(base, o, SweepTimeoutAt(doc, t).doc) = imB
+        BY TimeoutPlant DEF imB
+    <1>3. ReachN(base, box, t, imB, box, Cardinality(S))
+        BY <1>1, <1>2, ReachSame DEF imB
+    <1>4. ReachN(imB, box, t,
+                 ImgN(imB, pairs),
+                 BoxN(box, imB, pairs, t),
+                 Cardinality(pairs))
+        BY ListenFrom DEF imB, imD, pairs
+    <1>5. IsFiniteSet(pairs)
+        <2>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+            BY Zenon
+        <2>2. DOMAIN imD = DOMAIN doc
+            BY <2>1, ImageDom DEF imD
+        <2>3. DOMAIN imD \subseteq Id
+            BY <2>1, <2>2, Zenon
+        <2>4. QED
+            BY <2>3, PairFinite DEF pairs, imD
+    <1>6. Cardinality(S) \in Nat /\ Cardinality(pairs) \in Nat
+        <2>1. P!MaxSweep \in Nat
+            BY SweepCap
+        <2>2. Cardinality(S) \in Nat
+            BY <1>1, <2>1, Z3
+        <2>3. Cardinality(pairs) \in Nat
+            BY <1>5, FS_CardinalityType DEF pairs
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>7. QED
+        BY <1>3, <1>4, <1>6, ReachCat DEF imB, pairs
+
 ===============================================================================
