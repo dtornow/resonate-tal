@@ -1117,4 +1117,130 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+LEMMA AwSub ==
+    ASSUME NEW o, NEW t
+    PROVE  DueC(o, t) \subseteq [id : DOMAIN o, awaiter : Id]
+PROOF
+    BY DEF DueC, IdsC
+
+LEMMA InDueC ==
+    ASSUME NEW o, NEW t, NEW p
+    PROVE  p \in DueC(o, t)
+            <=> /\ p \in [id : { q \in DOMAIN o :
+                                   P!Project(o[q], t).promise.state /= "pending" },
+                          awaiter : Id]
+                /\ p.awaiter \in o[p.id].promise.callbacks
+PROOF
+    BY ONLY Zenon DEF DueC, IdsC
+
+(* A document that agrees with the store has no extra due callbacks. *)
+LEMMA CallsSub ==
+    ASSUME NEW base, NEW doc, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  DueC(doc, t) \subseteq DueC(base, t)
+PROOF
+    <1>1. ASSUME NEW p \in DueC(doc, t)
+          PROVE  p \in DueC(base, t)
+        <2> DEFINE ids ==
+                { q \in DOMAIN doc :
+                    P!Project(doc[q], t).promise.state /= "pending" }
+        <2>1. /\ p \in [id : ids, awaiter : Id]
+              /\ p.awaiter \in doc[p.id].promise.callbacks
+            BY <1>1, InDueC DEF ids
+        <2>2. p.id \in ids /\ p.awaiter \in Id
+            BY <2>1, Z3
+        <2>3. p.id \in DOMAIN doc /\ base[p.id] = doc[p.id]
+            BY <2>2, Zenon DEF ids
+        <2>4. p.id \in DOMAIN base
+            BY <2>3, Zenon
+        <2>5. P!Project(base[p.id], t) = P!Project(doc[p.id], t)
+            BY <2>3, Zenon
+        <2>6. p.id \in { q \in DOMAIN base :
+                           P!Project(base[q], t).promise.state /= "pending" }
+            BY <2>2, <2>4, <2>5, Zenon DEF ids
+        <2>7. p = [id |-> p.id, awaiter |-> p.awaiter]
+            BY <2>1, RecAw
+        <2>8. p \in [id : { q \in DOMAIN base :
+                              P!Project(base[q], t).promise.state /= "pending" },
+                     awaiter : Id]
+              /\ p.awaiter \in base[p.id].promise.callbacks
+            BY <2>1, <2>3, <2>6, <2>7, Zenon
+        <2>9. QED
+            BY <2>8, InDueC
+    <1>2. QED
+        BY <1>1
+
+LEMMA LocalDue ==
+    ASSUME NEW base, NEW doc, NEW t,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  \A y \in DueC(doc, t) :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+PROOF
+    <1>1. DueC(doc, t) \subseteq [id : DOMAIN doc, awaiter : Id]
+        BY AwSub
+    <1>2. ASSUME NEW y \in DueC(doc, t), y.awaiter \in DOMAIN base
+          PROVE  y.awaiter \in DOMAIN doc
+        <2>1. y \in [id : DOMAIN doc, awaiter : Id]
+            BY <1>1, <1>2, Zenon
+        <2>2. QED
+            BY <2>1, <1>2, Zenon
+    <1>3. QED
+        BY <1>2
+
+(* Due callbacks of one document are a chain in the whole store when that
+   document is a projected slice and every existing awaiter lives there.
+   The outbox is unchanged. *)
+LEMMA CallFrom ==
+    ASSUME NEW base, NEW doc, NEW t, NEW box,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k],
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k],
+           \A y \in DueC(doc, t) :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  ReachN(base, box, t,
+                  ImgC(base, DueC(doc, t), t),
+                  box,
+                  Cardinality(DueC(doc, t)))
+PROOF
+    <1> DEFINE calls == DueC(doc, t)
+    <1>1. DOMAIN doc \subseteq Id
+        BY Zenon
+    <1>2. IsFiniteSet(calls)
+        BY <1>1, AwFinite DEF calls
+    <1>3. calls \subseteq DueC(base, t)
+        BY CallsSub DEF calls
+    <1>4. \A y \in calls : P!Project(base[y.id], t) = base[y.id]
+        <2> SUFFICES ASSUME NEW y \in calls
+                     PROVE  P!Project(base[y.id], t) = base[y.id]
+            OBVIOUS
+        <2>1. y \in [id : DOMAIN doc, awaiter : Id]
+            BY AwSub DEF calls
+        <2>2. y.id \in DOMAIN doc
+            BY <2>1, Z3
+        <2>3. base[y.id] = doc[y.id]
+            BY <2>2, Zenon
+        <2>4. P!Project(doc[y.id], t) = doc[y.id]
+            BY <2>2
+        <2>5. QED
+            BY <2>3, <2>4, Zenon
+    <1>5. \A y \in calls :
+            y.awaiter \in DOMAIN base =>
+                P!Project(base[y.awaiter], t) = base[y.awaiter]
+        <2> SUFFICES ASSUME NEW y \in calls, y.awaiter \in DOMAIN base
+                     PROVE  P!Project(base[y.awaiter], t) = base[y.awaiter]
+            OBVIOUS
+        <2>1. y.awaiter \in DOMAIN doc
+            BY DEF calls
+        <2>2. base[y.awaiter] = doc[y.awaiter]
+            BY <2>1, Zenon
+        <2>3. P!Project(doc[y.awaiter], t) = doc[y.awaiter]
+            BY <2>1
+        <2>4. QED
+            BY <2>2, <2>3, Zenon
+    <1>6. QED
+        BY <1>2, <1>3, <1>4, <1>5, CallOn DEF calls
+
 ===============================================================================
