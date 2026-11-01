@@ -1243,4 +1243,165 @@ PROOF
     <1>6. QED
         BY <1>2, <1>3, <1>4, <1>5, CallOn DEF calls
 
+(* Timeouts, listeners, and callbacks of one origin are one chain. The
+   callback pass leaves the listener outbox where the listener pass put it.
+   Awaiters that exist are still in the document. *)
+LEMMA ThreePass ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  ReachN(base, box, t,
+                  ImgC(ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
+                       DueC(ImgN(Image(doc, S, t),
+                                 DueN(Image(doc, S, t), t)), t),
+                       t),
+                  BoxN(box, Image(base, S, t), DueN(Image(doc, S, t), t), t),
+                  Cardinality(S)
+                    + Cardinality(DueN(Image(doc, S, t), t))
+                    + Cardinality(DueC(ImgN(Image(doc, S, t),
+                                            DueN(Image(doc, S, t), t)), t)))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE boxL == BoxN(box, imB, pairs, t)
+    <1> DEFINE calls == DueC(docL, t)
+    <1>1. S \subseteq DOMAIN doc /\ DOMAIN doc \subseteq DOMAIN base
+        BY Zenon
+    <1>2. S \subseteq DOMAIN base
+        BY <1>1, Zenon
+    <1>3. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>1, <1>2, ImageDom DEF imD, imB
+    <1>4. ASSUME NEW k \in DOMAIN imD
+          PROVE  imB[k] = imD[k]
+        <2>1. k \in DOMAIN doc /\ k \in DOMAIN base
+            BY <1>3, <1>4, Zenon
+        <2>2. base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>3. imD[k] = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>1, <2>1, ImageVal DEF imD
+        <2>4. imB[k] = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <1>2, <2>1, ImageVal DEF imB
+        <2>5. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>2, Zenon
+        <2>6. QED
+            BY <2>2, <2>3, <2>4, <2>5, Z3
+    <1>5. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        <2>1. CASE pairs = {}
+            <3>1. docL = imD /\ mid = imB
+                BY <2>1 DEF docL, mid, ImgN
+            <3>2. QED
+                BY <3>1
+        <2>2. CASE pairs # {}
+            <3> DEFINE bD == [ j \in DOMAIN imD |-> BodyN(imD, pairs, j) ]
+            <3> DEFINE bB == [ j \in DOMAIN imB |-> BodyN(imB, pairs, j) ]
+            <3>1. docL = bD /\ mid = bB
+                BY <2>2 DEF docL, mid, ImgN, bD, bB
+            <3>2. DOMAIN bD = DOMAIN imD /\ DOMAIN bB = DOMAIN imB
+                BY DomCtor DEF bD, bB
+            <3>3. QED
+                BY <3>1, <3>2
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>6. DOMAIN mid \subseteq Id /\ DOMAIN docL \subseteq DOMAIN mid
+        BY <1>1, <1>3, <1>5, Zenon
+    <1>7. \A k \in DOMAIN docL : mid[k] = docL[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN docL
+                     PROVE  mid[k] = docL[k]
+            OBVIOUS
+        <2>1. k \in DOMAIN imD /\ k \in DOMAIN imB /\ imB[k] = imD[k]
+            BY <1>1, <1>3, <1>4, <1>5, Zenon
+        <2>2. CASE pairs = {}
+            <3>1. docL = imD /\ mid = imB
+                BY <2>2 DEF docL, mid, ImgN
+            <3>2. QED
+                BY <2>1, <3>1
+        <2>3. CASE pairs # {}
+            <3> DEFINE bD == [ j \in DOMAIN imD |-> BodyN(imD, pairs, j) ]
+            <3> DEFINE bB == [ j \in DOMAIN imB |-> BodyN(imB, pairs, j) ]
+            <3>1. docL = bD /\ mid = bB
+                BY <2>3 DEF docL, mid, ImgN, bD, bB
+            <3>2. bD[k] = BodyN(imD, pairs, k)
+                BY <2>1, Zenon DEF bD
+            <3>3. bB[k] = BodyN(imB, pairs, k)
+                BY <2>1, Zenon DEF bB
+            <3>4. BodyN(imB, pairs, k) = BodyN(imD, pairs, k)
+                BY <2>1, SameBody
+            <3>5. QED
+                BY <3>1, <3>2, <3>3, <3>4
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>8. \A k \in DOMAIN imD : P!Project(imD[k], t) = imD[k]
+        BY <1>3, SliceFixed DEF imD
+    <1>9. \A k \in DOMAIN docL : P!Project(docL[k], t) = docL[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN docL
+                     PROVE  P!Project(docL[k], t) = docL[k]
+            OBVIOUS
+        <2> DEFINE obj == imD[k]
+        <2>1. k \in DOMAIN imD
+            BY <1>5, Zenon
+        <2>2. obj = imD[k] /\ P!Project(obj, t) = obj
+            BY <1>8, <2>1, Zenon DEF obj
+        <2>3. QED
+            BY <2>1, <2>2, StillFixed DEF docL, pairs, obj
+    <1>10. \A y \in [id : DOMAIN docL, awaiter : Id] :
+              y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+        <2> SUFFICES ASSUME NEW y \in [id : DOMAIN docL, awaiter : Id],
+                            y.awaiter \in DOMAIN mid
+                     PROVE  y.awaiter \in DOMAIN docL
+            OBVIOUS
+        <2>1. DOMAIN docL = DOMAIN doc /\ DOMAIN mid = DOMAIN base
+            BY <1>3, <1>5, Zenon
+        <2>2. y \in [id : DOMAIN doc, awaiter : Id]
+            BY <2>1, Zenon
+        <2>3. y.awaiter \in DOMAIN base
+            BY <2>1, Zenon
+        <2>4. y.awaiter \in DOMAIN doc
+            BY <2>2, <2>3, Zenon
+        <2>5. QED
+            BY <2>1, <2>4, Zenon
+    <1>11. \A y \in calls :
+              y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+        BY <1>10, LocalDue DEF calls, docL, mid
+    <1>12. ReachN(mid, boxL, t, ImgC(mid, calls, t), boxL, Cardinality(calls))
+        BY <1>6, <1>7, <1>9, <1>11, CallFrom DEF mid, docL, calls, boxL
+    <1>13. ReachN(base, box, t, mid, boxL,
+                  Cardinality(S) + Cardinality(pairs))
+        BY TwoPass DEF imB, imD, pairs, mid, boxL
+    <1>14. Cardinality(S) \in Nat
+        <2>1. Cardinality(S) \in 0 .. P!MaxSweep
+            BY TimeoutChain
+        <2>2. P!MaxSweep \in Nat
+            BY SweepCap
+        <2>3. QED
+            BY <2>1, <2>2, Z3
+    <1>15. Cardinality(pairs) \in Nat
+        <2>1. DOMAIN imD \subseteq Id
+            BY <1>1, <1>3, Zenon
+        <2>2. IsFiniteSet(pairs)
+            BY <2>1, PairFinite DEF pairs, imD
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>16. Cardinality(calls) \in Nat
+        <2>1. DOMAIN docL \subseteq Id
+            BY <1>6, Zenon
+        <2>2. IsFiniteSet(calls)
+            BY <2>1, AwFinite DEF calls, docL
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>17. Cardinality(S) + Cardinality(pairs) \in Nat
+        BY <1>14, <1>15, Z3
+    <1>18. QED
+        BY <1>12, <1>13, <1>16, <1>17, ReachCat DEF mid, boxL, calls
+
 ===============================================================================
