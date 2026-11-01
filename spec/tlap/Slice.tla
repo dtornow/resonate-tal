@@ -1616,4 +1616,232 @@ PROOF
     <1>16. QED
         BY <1>6, <1>15 DEF mid, docL, calls
 
+(* An acquired task whose lease time is set, on a promise that is still
+   pending, is exactly a due lease. Projection is already the identity, so
+   the promise state is the real state. *)
+LEMMA LeaseShape ==
+    ASSUME NEW doc, NEW t,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k],
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  { i \in DOMAIN doc :
+               doc[i].task.state = "acquired"
+               /\ doc[i].task.leaseTimeoutAt <= t }
+           = DueL(doc, t)
+PROOF
+    <1> DEFINE exp ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "acquired"
+                /\ doc[i].task.leaseTimeoutAt <= t }
+    <1>1. exp \subseteq DueL(doc, t)
+        <2> SUFFICES ASSUME NEW k \in exp
+                     PROVE  k \in DueL(doc, t)
+            OBVIOUS
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "acquired"
+              /\ doc[k].task.leaseTimeoutAt <= t
+            BY DEF exp
+        <2>2. doc[k].task.leaseTimeoutAt /= NoTime
+              /\ doc[k].promise.state = "pending"
+            BY <2>1, Zenon
+        <2>3. P!Project(doc[k], t) = doc[k]
+            BY <2>1
+        <2>4. P!Project(doc[k], t).promise.state = doc[k].promise.state
+            BY <2>3, Zenon
+        <2>5. QED
+            BY <2>1, <2>2, <2>4, Zenon DEF DueL
+    <1>2. DueL(doc, t) \subseteq exp
+        <2> SUFFICES ASSUME NEW k \in DueL(doc, t)
+                     PROVE  k \in exp
+            OBVIOUS
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "acquired"
+              /\ doc[k].task.leaseTimeoutAt <= t
+            BY DEF DueL
+        <2>2. QED
+            BY <2>1 DEF exp
+    <1>3. QED
+        BY <1>1, <1>2, SetExtensionality DEF exp
+
+LEMMA LeasesSub ==
+    ASSUME NEW base, NEW doc, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  DueL(doc, t) \subseteq DueL(base, t)
+PROOF
+    <1>1. ASSUME NEW k \in DueL(doc, t)
+          PROVE  k \in DueL(base, t)
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "acquired"
+              /\ doc[k].task.leaseTimeoutAt /= NoTime
+              /\ doc[k].task.leaseTimeoutAt <= t
+              /\ P!Project(doc[k], t).promise.state = "pending"
+            BY <1>1 DEF DueL
+        <2>2. k \in DOMAIN base /\ base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>3. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>2, Zenon
+        <2>4. QED
+            BY <2>1, <2>2, <2>3, Zenon DEF DueL
+    <1>2. QED
+        BY <1>1
+
+(* Due leases of one document are a chain in the whole store. The outbox
+   stays. The document carries the lease shape. *)
+LEMMA LeaseFrom ==
+    ASSUME NEW base, NEW doc, NEW t, NEW box,
+           DOMAIN doc \subseteq DOMAIN base,
+           DOMAIN doc \subseteq Id,
+           \A k \in DOMAIN doc : base[k] = doc[k],
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k],
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  ReachN(base, box, t,
+                  ImgL(base,
+                       { i \in DOMAIN doc :
+                           doc[i].task.state = "acquired"
+                           /\ doc[i].task.leaseTimeoutAt <= t },
+                       t),
+                  box,
+                  Cardinality({ i \in DOMAIN doc :
+                                  doc[i].task.state = "acquired"
+                                  /\ doc[i].task.leaseTimeoutAt <= t }))
+PROOF
+    <1> DEFINE exp ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "acquired"
+                /\ doc[i].task.leaseTimeoutAt <= t }
+    <1>1. exp = DueL(doc, t)
+        BY LeaseShape DEF exp
+    <1>2. exp \subseteq DueL(base, t)
+        BY <1>1, LeasesSub DEF exp
+    <1>3. exp \subseteq Id
+        <2>1. exp \subseteq DOMAIN doc
+            BY <1>1, LeaseSubset DEF exp
+        <2>2. QED
+            BY <2>1, Zenon
+    <1>4. IsFiniteSet(exp)
+        BY <1>3, SubCap DEF exp
+    <1>5. QED
+        BY <1>2, <1>4, LeaseSub DEF exp
+
+(* A pending task whose retry time is set, on a promise that is still
+   pending, is exactly a due retry. *)
+LEMMA RetryShape ==
+    ASSUME NEW doc, NEW t,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k],
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  { i \in DOMAIN doc :
+               doc[i].task.state = "pending"
+               /\ doc[i].task.retryTimeoutAt <= t }
+           = DueR(doc, t)
+PROOF
+    <1> DEFINE exp ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "pending"
+                /\ doc[i].task.retryTimeoutAt <= t }
+    <1>1. exp \subseteq DueR(doc, t)
+        <2> SUFFICES ASSUME NEW k \in exp
+                     PROVE  k \in DueR(doc, t)
+            OBVIOUS
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "pending"
+              /\ doc[k].task.retryTimeoutAt <= t
+            BY DEF exp
+        <2>2. doc[k].task.retryTimeoutAt /= NoTime
+              /\ doc[k].promise.state = "pending"
+            BY <2>1, Zenon
+        <2>3. P!Project(doc[k], t) = doc[k]
+            BY <2>1
+        <2>4. P!Project(doc[k], t).promise.state = doc[k].promise.state
+            BY <2>3, Zenon
+        <2>5. QED
+            BY <2>1, <2>2, <2>4, Zenon DEF DueR
+    <1>2. DueR(doc, t) \subseteq exp
+        <2> SUFFICES ASSUME NEW k \in DueR(doc, t)
+                     PROVE  k \in exp
+            OBVIOUS
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "pending"
+              /\ doc[k].task.retryTimeoutAt <= t
+            BY DEF DueR
+        <2>2. QED
+            BY <2>1 DEF exp
+    <1>3. QED
+        BY <1>1, <1>2, SetExtensionality DEF exp
+
+LEMMA RetriesSub ==
+    ASSUME NEW base, NEW doc, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  DueR(doc, t) \subseteq DueR(base, t)
+PROOF
+    <1>1. ASSUME NEW k \in DueR(doc, t)
+          PROVE  k \in DueR(base, t)
+        <2>1. /\ k \in DOMAIN doc
+              /\ doc[k].task.state = "pending"
+              /\ doc[k].task.retryTimeoutAt /= NoTime
+              /\ doc[k].task.retryTimeoutAt <= t
+              /\ P!Project(doc[k], t).promise.state = "pending"
+            BY <1>1 DEF DueR
+        <2>2. k \in DOMAIN base /\ base[k] = doc[k]
+            BY <2>1, Zenon
+        <2>3. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>2, Zenon
+        <2>4. QED
+            BY <2>1, <2>2, <2>3, Zenon DEF DueR
+    <1>2. QED
+        BY <1>1
+
+(* Due retries of one document are a chain in the whole store. Each posts
+   its Execute. The document carries the retry shape. *)
+LEMMA RetryFrom ==
+    ASSUME NEW base, NEW doc, NEW t, NEW box,
+           DOMAIN doc \subseteq DOMAIN base,
+           DOMAIN doc \subseteq Id,
+           \A k \in DOMAIN doc : base[k] = doc[k],
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k],
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  ReachN(base, box, t,
+                  ImgR(base,
+                       { i \in DOMAIN doc :
+                           doc[i].task.state = "pending"
+                           /\ doc[i].task.retryTimeoutAt <= t },
+                       t),
+                  BoxAt(box, base,
+                        { i \in DOMAIN doc :
+                            doc[i].task.state = "pending"
+                            /\ doc[i].task.retryTimeoutAt <= t }),
+                  Cardinality({ i \in DOMAIN doc :
+                                  doc[i].task.state = "pending"
+                                  /\ doc[i].task.retryTimeoutAt <= t }))
+PROOF
+    <1> DEFINE exp ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "pending"
+                /\ doc[i].task.retryTimeoutAt <= t }
+    <1>1. exp = DueR(doc, t)
+        BY RetryShape DEF exp
+    <1>2. exp \subseteq DueR(base, t)
+        BY <1>1, RetriesSub DEF exp
+    <1>3. exp \subseteq Id
+        <2>1. exp \subseteq DOMAIN doc
+            BY <1>1, RetrySubset DEF exp
+        <2>2. QED
+            BY <2>1, Zenon
+    <1>4. IsFiniteSet(exp)
+        BY <1>3, SubCap DEF exp
+    <1>5. QED
+        BY <1>2, <1>4, RetrySub DEF exp
+
 ===============================================================================
