@@ -983,4 +983,138 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2, CallDoc DEF im
 
+LEMMA SameBodyC ==
+    ASSUME NEW a, NEW b, NEW S, NEW j, NEW t, a[j] = b[j]
+    PROVE  BodyC(a, S, j, t) = BodyC(b, S, j, t)
+PROOF
+    <1> DEFINE g == Drp(j, S)
+    <1> DEFINE sa == Src(j, S)
+    <1>1. Cleared(a, S, j)
+            = (IF g = {} THEN a[j] ELSE P!WithoutCallbacks(a[j], g))
+        BY DEF Cleared, g
+    <1>2. Cleared(b, S, j)
+            = (IF g = {} THEN b[j] ELSE P!WithoutCallbacks(b[j], g))
+        BY DEF Cleared, g
+    <1>3. Cleared(a, S, j) = Cleared(b, S, j)
+        BY <1>1, <1>2, Z3
+    <1>4. BodyC(a, S, j, t) = Woken(Cleared(a, S, j), sa, t)
+        BY DEF BodyC, sa
+    <1>5. BodyC(b, S, j, t) = Woken(Cleared(b, S, j), sa, t)
+        BY DEF BodyC, sa
+    <1>6. Woken(Cleared(a, S, j), sa, t) = Woken(Cleared(b, S, j), sa, t)
+        BY <1>3, Z3 DEF Woken
+    <1>7. QED
+        BY <1>4, <1>5, <1>6
+
+LEMMA SrcOut ==
+    ASSUME NEW j, NEW S, \A y \in S : y.awaiter /= j
+    PROVE  Src(j, S) = {}
+PROOF
+    <1>1. Src(j, S) = { p.id : p \in { y \in S : y.awaiter = j } }
+        BY DEF Src
+    <1>2. { y \in S : y.awaiter = j } = {}
+        BY Zenon
+    <1>3. { p.id : p \in {} } = {}
+        BY Zenon
+    <1>4. QED
+        BY <1>1, <1>2, <1>3, Zenon
+
+(* A callback image of one document, planted, is the callback image of the
+   whole store when every awaiter that exists is in that document. *)
+LEMMA PlantC ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW S,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S \subseteq [id : DOMAIN doc, awaiter : Id],
+           \A y \in S : y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  Plant(base, o, ImgC(doc, S, t)) = ImgC(base, S, t)
+PROOF
+    <1>1. CASE S = {}
+        <2>1. ImgC(doc, S, t) = doc /\ ImgC(base, S, t) = base
+            BY <1>1 DEF ImgC
+        <2>2. Plant(base, o, doc) = base
+            BY PlantId
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>2. CASE S # {}
+        <2> DEFINE body == [ j \in DOMAIN doc |-> BodyC(doc, S, j, t) ]
+        <2> DEFINE full == [ j \in DOMAIN base |-> BodyC(base, S, j, t) ]
+        <2>1. ImgC(doc, S, t) = body
+            BY <1>2 DEF ImgC, body
+        <2>2. ImgC(base, S, t) = full
+            BY <1>2 DEF ImgC, full
+        <2>3. DOMAIN body = DOMAIN doc
+            BY DomCtor DEF body
+        <2> DEFINE kept == { q \in DOMAIN base : q.origin /= o }
+        <2> DEFINE dom == kept \cup DOMAIN body
+        <2>4. \A n : n \in dom <=> n \in DOMAIN base
+            BY <2>3 DEF kept, dom
+        <2>5. dom = DOMAIN base
+            BY <2>4, SetExtensionality DEF dom
+        <2>6. \A n \in DOMAIN base :
+                (IF n \in DOMAIN body THEN body[n] ELSE base[n]) = full[n]
+            <3> SUFFICES ASSUME NEW k \in DOMAIN base
+                         PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                                  = full[k]
+                OBVIOUS
+            <3>1. full[k] = BodyC(base, S, k, t)
+                BY Zenon DEF full
+            <3>2. CASE k \in DOMAIN doc
+                <4>1. k \in DOMAIN body /\ body[k] = BodyC(doc, S, k, t)
+                    BY <2>3, <3>2, Zenon DEF body
+                <4>2. base[k] = doc[k]
+                    BY <3>2, Zenon
+                <4>3. BodyC(base, S, k, t) = BodyC(doc, S, k, t)
+                    BY <4>2, SameBodyC
+                <4>4. QED
+                    BY <3>1, <4>1, <4>3
+            <3>3. CASE k \notin DOMAIN doc
+                <4>1. k \notin DOMAIN body
+                    BY <2>3, <3>3
+                <4>2. \A y \in S : y.awaiter /= k
+                    BY <3>3, Zenon
+                <4>3. Src(k, S) = {}
+                    BY <4>2, SrcOut
+                <4>4. Cleared(base, S, k) = base[k]
+                    <5> DEFINE g == Drp(k, S)
+                    <5>1. CASE g = {}
+                        BY <5>1 DEF Cleared, g
+                    <5>2. CASE g # {}
+                        <6>1. \E y \in S : y.id = k
+                            BY <5>2 DEF Drp, g
+                        <6>2. PICK y \in S : y.id = k
+                            BY <6>1
+                        <6>3. y \in [id : DOMAIN doc, awaiter : Id]
+                            BY <6>2
+                        <6>4. y.id \in DOMAIN doc
+                            BY <6>3, Z3
+                        <6>5. FALSE
+                            BY <3>3, <6>2, <6>4
+                        <6>6. QED
+                            BY <6>5
+                    <5>3. QED
+                        BY <5>1, <5>2
+                <4>5. Woken(base[k], {}, t) = base[k]
+                    BY DEF Woken
+                <4>6. BodyC(base, S, k, t)
+                        = Woken(Cleared(base, S, k), Src(k, S), t)
+                    BY DEF BodyC
+                <4>7. BodyC(base, S, k, t) = base[k]
+                    BY <4>3, <4>4, <4>5, <4>6, Zenon
+                <4>8. QED
+                    BY <3>1, <4>1, <4>7
+            <3>4. QED
+                BY <3>2, <3>3
+        <2>7. Plant(base, o, body)
+                = [ n \in dom |-> IF n \in DOMAIN body THEN body[n] ELSE base[n] ]
+            BY DEF Plant, kept, dom
+        <2>8. [ n \in dom |-> IF n \in DOMAIN body THEN body[n] ELSE base[n] ]
+                = full
+            BY <2>5, <2>6, ExtCtor DEF full
+        <2>9. QED
+            BY <2>1, <2>2, <2>7, <2>8
+    <1>3. QED
+        BY <1>1, <1>2
+
 ===============================================================================
