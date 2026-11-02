@@ -282,4 +282,56 @@ PROOF
     <1>9. QED
         BY <1>7, <1>8, Zenon
 
+(* One send is one replace-by-key. *)
+LEMMA DeliverOne ==
+    ASSUME NEW b, NEW msg
+    PROVE  Deliver(b, << msg >>) = Post(b, msg)
+PROOF
+    <1>1. Len(<< msg >>) = 1
+        OBVIOUS
+    <1>2. << msg >>[1] = msg
+        OBVIOUS
+    <1> DEFINE posted == Post(b, msg)
+    <1> DEFINE f == [n \in 0 .. 1 |-> IF n = 0 THEN b ELSE posted]
+    <1> DEFINE P(u) ==
+            u = [n \in 0 .. Len(<< msg >>) |->
+                    IF n = 0 THEN b
+                    ELSE LET acc == u[n - 1]
+                         IN  { x \in acc : MsgKey(x) /= MsgKey(<< msg >>[n]) }
+                                \cup {<< msg >>[n]} ]
+    <1>3. P(f)
+        BY <1>1, <1>2, Z3 DEF f, P, posted, Post
+    <1>4. P(CHOOSE u : P(u))
+        BY <1>3, Ax DEF P
+    <1>5. \A u : P(u) => u[0] = b
+        BY Z3 DEF P
+    <1>6. \A u : P(u) => u[1] = { x \in u[0] : MsgKey(x) /= MsgKey(msg) } \cup {msg}
+        BY <1>1, <1>2, Z3 DEF P
+    <1>7. (CHOOSE u : P(u))[1] = posted
+        BY <1>4, <1>5, <1>6, Zenon DEF posted, Post
+    <1>8. (LET upto[n \in 0 .. Len(<< msg >>)] ==
+                 IF n = 0 THEN b
+                 ELSE LET acc == upto[n - 1]
+                      IN  { x \in acc : MsgKey(x) /= MsgKey(<< msg >>[n]) }
+                             \cup {<< msg >>[n]}
+           IN  upto) = (CHOOSE u : P(u))
+        BY Zenon DEF P
+    <1>9. (LET upto[n \in 0 .. Len(<< msg >>)] ==
+                 IF n = 0 THEN b
+                 ELSE LET acc == upto[n - 1]
+                      IN  { x \in acc : MsgKey(x) /= MsgKey(<< msg >>[n]) }
+                             \cup {<< msg >>[n]}
+           IN  upto[Len(<< msg >>)]) = posted
+        BY <1>1, <1>7, <1>8, Zenon
+    <1>10. Deliver(b, << msg >>) =
+             (LET upto[n \in 0 .. Len(<< msg >>)] ==
+                    IF n = 0 THEN b
+                    ELSE LET acc == upto[n - 1]
+                         IN  { x \in acc : MsgKey(x) /= MsgKey(<< msg >>[n]) }
+                                \cup {<< msg >>[n]}
+              IN  upto[Len(<< msg >>)])
+        BY Zenon DEF Deliver
+    <1>11. QED
+        BY <1>9, <1>10, Zenon DEF posted
+
 ===============================================================================
