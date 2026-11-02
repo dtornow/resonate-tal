@@ -3487,4 +3487,639 @@ PROOF
     <1>23. QED
         BY <1>22 DEF imB, imD, pairs, docL, mid, calls, cbB, cbD, boxL, exp, n3
 
+LEMMA DomImgL ==
+    ASSUME NEW doc, NEW T, NEW t
+    PROVE  DOMAIN ImgL(doc, T, t) = DOMAIN doc
+PROOF
+    <1>1. CASE T = {}
+        BY <1>1 DEF ImgL
+    <1>2. CASE T # {}
+        <2> DEFINE im ==
+                [ i \in DOMAIN doc |->
+                    IF i \in T THEN LeaseBody(doc[i], t) ELSE doc[i] ]
+        <2>1. ImgL(doc, T, t) = im
+            BY <1>2 DEF ImgL, im
+        <2>2. DOMAIN im = DOMAIN doc
+            BY DomCtor DEF im
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA LeaseIn ==
+    ASSUME NEW o, NEW T, NEW t, NEW x,
+           x \in DOMAIN o, x \in T, T \subseteq DOMAIN o
+    PROVE  ImgL(o, T, t)[x] = LeaseBody(o[x], t)
+PROOF
+    <1>1. T # {}
+        BY Z3
+    <1> DEFINE body ==
+            [ i \in DOMAIN o |-> IF i \in T THEN LeaseBody(o[i], t) ELSE o[i] ]
+    <1>2. ImgL(o, T, t) = body
+        BY <1>1 DEF ImgL, body
+    <1>3. DOMAIN body = DOMAIN o
+        BY DomCtor DEF body
+    <1>4. body[x] = (IF x \in T THEN LeaseBody(o[x], t) ELSE o[x])
+        BY Zenon DEF body
+    <1>5. body[x] = LeaseBody(o[x], t)
+        BY Z3
+    <1>6. QED
+        BY <1>2, <1>3, <1>4, <1>5, Zenon
+
+LEMMA SameLease ==
+    ASSUME NEW a, NEW b, NEW t, a = b
+    PROVE  LeaseBody(a, t) = LeaseBody(b, t)
+PROOF
+    <1>1. a = b
+        OBVIOUS
+    <1>2. QED
+        BY ONLY <1>1, Isa DEF LeaseBody
+
+(* Expiring a lease makes the task pending at this time and keeps the promise. *)
+LEMMA LeaseKeeps ==
+    ASSUME NEW obj, NEW t
+    PROVE  /\ LeaseBody(obj, t).task.state = "pending"
+           /\ LeaseBody(obj, t).task.retryTimeoutAt = t
+           /\ LeaseBody(obj, t).promise.state = obj.promise.state
+           /\ LeaseBody(obj, t).promise.timeoutAt = obj.promise.timeoutAt
+PROOF
+    <1> DEFINE task1 ==
+            [obj.task EXCEPT !.state          = "pending",
+                             !.pid            = NoPid,
+                             !.ttl            = NoTime,
+                             !.leaseTimeoutAt = NoTime,
+                             !.retryTimeoutAt = t]
+    <1> DEFINE body == [obj EXCEPT !.task = task1]
+    <1>1. task1.state = "pending"
+        BY Z3 DEF task1
+    <1>2. task1.retryTimeoutAt = t
+        BY Z3 DEF task1
+    <1>3. body.task = task1
+        BY Z3 DEF body
+    <1>4. body.promise = obj.promise
+        BY Z3 DEF body
+    <1>5. LeaseBody(obj, t) = body
+        BY ONLY Zenon DEF LeaseBody, task1, body
+    <1>6. LeaseBody(obj, t).task.state = "pending"
+        BY <1>1, <1>3, <1>5, Zenon DEF body, task1
+    <1>7. LeaseBody(obj, t).task.retryTimeoutAt = t
+        BY <1>2, <1>3, <1>5, Zenon DEF body, task1
+    <1>8. LeaseBody(obj, t).promise.state = obj.promise.state
+        BY <1>4, <1>5, Z3 DEF body
+    <1>9. LeaseBody(obj, t).promise.timeoutAt = obj.promise.timeoutAt
+        BY <1>4, <1>5, Z3 DEF body
+    <1>10. QED
+        BY <1>6, <1>7, <1>8, <1>9
+
+LEMMA RetryImgL ==
+    ASSUME NEW doc, NEW T, NEW t,
+           T \subseteq DOMAIN doc,
+           t /= NoTime,
+           \A k \in T : doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN ImgL(doc, T, t) :
+               ImgL(doc, T, t)[k].task.state = "pending" =>
+                   /\ ImgL(doc, T, t)[k].task.retryTimeoutAt /= NoTime
+                   /\ ImgL(doc, T, t)[k].promise.state = "pending"
+PROOF
+    <1>1. DOMAIN ImgL(doc, T, t) = DOMAIN doc
+        BY DomImgL
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  ImgL(doc, T, t)[k].task.state = "pending" =>
+                     /\ ImgL(doc, T, t)[k].task.retryTimeoutAt /= NoTime
+                     /\ ImgL(doc, T, t)[k].promise.state = "pending"
+        <2>1. CASE k \notin T
+            <3>1. ImgL(doc, T, t)[k] = doc[k]
+                BY <1>2, <2>1, LeaseAt
+            <3>2. QED
+                BY <1>2, <3>1, Zenon
+        <2>2. CASE k \in T
+            <3> DEFINE b == LeaseBody(doc[k], t)
+            <3>1. ImgL(doc, T, t)[k] = b
+                BY <1>2, <2>2, LeaseIn DEF b
+            <3>2. doc[k].promise.state = "pending"
+                BY <2>2, Zenon
+            <3>3. /\ b.task.state = "pending"
+                  /\ b.task.retryTimeoutAt = t
+                  /\ b.promise.state = doc[k].promise.state
+                BY LeaseKeeps DEF b
+            <3>4. b.promise.state = "pending"
+                BY <3>2, <3>3, Zenon
+            <3>5. b.task.retryTimeoutAt /= NoTime
+                BY <3>3, Zenon
+            <3>6. QED
+                BY <3>1, <3>3, <3>4, <3>5, Zenon
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA FixedImgL ==
+    ASSUME NEW doc, NEW T, NEW t,
+           T \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k]
+    PROVE  \A k \in DOMAIN ImgL(doc, T, t) :
+               P!Project(ImgL(doc, T, t)[k], t) = ImgL(doc, T, t)[k]
+PROOF
+    <1>1. DOMAIN ImgL(doc, T, t) = DOMAIN doc
+        BY DomImgL
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  P!Project(ImgL(doc, T, t)[k], t) = ImgL(doc, T, t)[k]
+        <2>1. P!Project(doc[k], t) = doc[k]
+            BY <1>2, Zenon
+        <2>2. CASE k \notin T
+            <3>1. ImgL(doc, T, t)[k] = doc[k]
+                BY <1>2, <2>2, LeaseAt
+            <3>2. QED
+                BY <2>1, <3>1, Zenon
+        <2>3. CASE k \in T
+            <3> DEFINE b == LeaseBody(doc[k], t)
+            <3>1. ImgL(doc, T, t)[k] = b
+                BY <1>2, <2>3, LeaseIn DEF b
+            <3>2. /\ b.promise.state = doc[k].promise.state
+                  /\ b.promise.timeoutAt = doc[k].promise.timeoutAt
+                BY LeaseKeeps DEF b
+            <3>3. P!Project(b, t) = b
+                BY <2>1, <3>2, PromiseGuard DEF b
+            <3>4. QED
+                BY <3>1, <3>3, Zenon
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA AgreeImgL ==
+    ASSUME NEW base, NEW doc, NEW T, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           T \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  \A k \in DOMAIN ImgL(doc, T, t) :
+               ImgL(base, T, t)[k] = ImgL(doc, T, t)[k]
+PROOF
+    <1>1. DOMAIN ImgL(doc, T, t) = DOMAIN doc
+        BY DomImgL
+    <1>2. T \subseteq DOMAIN base
+        BY Zenon
+    <1>3. ASSUME NEW k \in DOMAIN doc
+          PROVE  ImgL(base, T, t)[k] = ImgL(doc, T, t)[k]
+        <2>1. base[k] = doc[k]
+            BY <1>3, Zenon
+        <2>2. k \in DOMAIN base
+            BY <1>3, Zenon
+        <2>3. CASE k \notin T
+            <3>1. ImgL(doc, T, t)[k] = doc[k]
+                BY <1>3, <2>3, LeaseAt
+            <3>2. ImgL(base, T, t)[k] = base[k]
+                BY <1>2, <2>2, <2>3, LeaseAt
+            <3>3. QED
+                BY <2>1, <3>1, <3>2, Zenon
+        <2>4. CASE k \in T
+            <3>1. ImgL(doc, T, t)[k] = LeaseBody(doc[k], t)
+                BY <1>3, <2>4, LeaseIn
+            <3>2. ImgL(base, T, t)[k] = LeaseBody(base[k], t)
+                BY <1>2, <2>2, <2>4, LeaseIn
+            <3>3. LeaseBody(base[k], t) = LeaseBody(doc[k], t)
+                BY <2>1, SameLease
+            <3>4. QED
+                BY <3>1, <3>2, <3>3, Zenon
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>4. QED
+        BY <1>1, <1>3, Z3
+
+(* The due retries follow the leases. Each posts its Execute on the
+   listener outbox. *)
+LEMMA RetryJoin ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  ReachN(base, box, t,
+                  ImgR(ImgL(ImgC(ImgN(Image(base, S, t),
+                                      DueN(Image(doc, S, t), t)),
+                                 DueC(ImgN(Image(doc, S, t),
+                                           DueN(Image(doc, S, t), t)), t),
+                                 t),
+                            { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)),
+                                               DueC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)),
+                                                    t),
+                                               t) :
+                                ImgC(ImgN(Image(doc, S, t),
+                                          DueN(Image(doc, S, t), t)),
+                                     DueC(ImgN(Image(doc, S, t),
+                                               DueN(Image(doc, S, t), t)), t),
+                                     t)[i].task.state = "acquired"
+                                /\ ImgC(ImgN(Image(doc, S, t),
+                                             DueN(Image(doc, S, t), t)),
+                                        DueC(ImgN(Image(doc, S, t),
+                                                  DueN(Image(doc, S, t), t)), t),
+                                        t)[i].task.leaseTimeoutAt <= t },
+                            t),
+                       { j \in DOMAIN ImgL(ImgC(ImgN(Image(doc, S, t),
+                                                    DueN(Image(doc, S, t), t)),
+                                               DueC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)),
+                                                    t),
+                                               t),
+                                          { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                                   DueN(Image(doc, S, t), t)),
+                                                             DueC(ImgN(Image(doc, S, t),
+                                                                       DueN(Image(doc, S, t), t)),
+                                                                  t),
+                                                             t) :
+                                              ImgC(ImgN(Image(doc, S, t),
+                                                        DueN(Image(doc, S, t), t)),
+                                                   DueC(ImgN(Image(doc, S, t),
+                                                             DueN(Image(doc, S, t), t)), t),
+                                                   t)[i].task.state = "acquired"
+                                              /\ ImgC(ImgN(Image(doc, S, t),
+                                                           DueN(Image(doc, S, t), t)),
+                                                      DueC(ImgN(Image(doc, S, t),
+                                                                DueN(Image(doc, S, t), t)), t),
+                                                      t)[i].task.leaseTimeoutAt <= t },
+                                          t) :
+                           ImgL(ImgC(ImgN(Image(doc, S, t),
+                                          DueN(Image(doc, S, t), t)),
+                                     DueC(ImgN(Image(doc, S, t),
+                                               DueN(Image(doc, S, t), t)), t),
+                                     t),
+                                { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)),
+                                                   DueC(ImgN(Image(doc, S, t),
+                                                             DueN(Image(doc, S, t), t)),
+                                                        t),
+                                                   t) :
+                                    ImgC(ImgN(Image(doc, S, t),
+                                              DueN(Image(doc, S, t), t)),
+                                         DueC(ImgN(Image(doc, S, t),
+                                                   DueN(Image(doc, S, t), t)), t),
+                                         t)[i].task.state = "acquired"
+                                    /\ ImgC(ImgN(Image(doc, S, t),
+                                                 DueN(Image(doc, S, t), t)),
+                                            DueC(ImgN(Image(doc, S, t),
+                                                      DueN(Image(doc, S, t), t)), t),
+                                            t)[i].task.leaseTimeoutAt <= t },
+                                t)[j].task.state = "pending"
+                           /\ ImgL(ImgC(ImgN(Image(doc, S, t),
+                                             DueN(Image(doc, S, t), t)),
+                                        DueC(ImgN(Image(doc, S, t),
+                                                  DueN(Image(doc, S, t), t)), t),
+                                        t),
+                                   { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                            DueN(Image(doc, S, t), t)),
+                                                      DueC(ImgN(Image(doc, S, t),
+                                                                DueN(Image(doc, S, t), t)),
+                                                           t),
+                                                      t) :
+                                       ImgC(ImgN(Image(doc, S, t),
+                                                 DueN(Image(doc, S, t), t)),
+                                            DueC(ImgN(Image(doc, S, t),
+                                                      DueN(Image(doc, S, t), t)), t),
+                                            t)[i].task.state = "acquired"
+                                       /\ ImgC(ImgN(Image(doc, S, t),
+                                                    DueN(Image(doc, S, t), t)),
+                                               DueC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)), t),
+                                               t)[i].task.leaseTimeoutAt <= t },
+                                   t)[j].task.retryTimeoutAt <= t },
+                       t),
+                  BoxAt(BoxN(box, Image(base, S, t), DueN(Image(doc, S, t), t), t),
+                        ImgL(ImgC(ImgN(Image(base, S, t),
+                                       DueN(Image(doc, S, t), t)),
+                                  DueC(ImgN(Image(doc, S, t),
+                                            DueN(Image(doc, S, t), t)), t),
+                                  t),
+                             { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                      DueN(Image(doc, S, t), t)),
+                                                DueC(ImgN(Image(doc, S, t),
+                                                          DueN(Image(doc, S, t), t)),
+                                                     t),
+                                                t) :
+                                 ImgC(ImgN(Image(doc, S, t),
+                                           DueN(Image(doc, S, t), t)),
+                                      DueC(ImgN(Image(doc, S, t),
+                                                DueN(Image(doc, S, t), t)), t),
+                                      t)[i].task.state = "acquired"
+                                 /\ ImgC(ImgN(Image(doc, S, t),
+                                              DueN(Image(doc, S, t), t)),
+                                         DueC(ImgN(Image(doc, S, t),
+                                                   DueN(Image(doc, S, t), t)), t),
+                                         t)[i].task.leaseTimeoutAt <= t },
+                             t),
+                        { j \in DOMAIN ImgL(ImgC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)),
+                                                DueC(ImgN(Image(doc, S, t),
+                                                          DueN(Image(doc, S, t), t)),
+                                                     t),
+                                                t),
+                                           { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                                    DueN(Image(doc, S, t), t)),
+                                                              DueC(ImgN(Image(doc, S, t),
+                                                                        DueN(Image(doc, S, t), t)),
+                                                                   t),
+                                                              t) :
+                                               ImgC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)),
+                                                    DueC(ImgN(Image(doc, S, t),
+                                                              DueN(Image(doc, S, t), t)), t),
+                                                    t)[i].task.state = "acquired"
+                                               /\ ImgC(ImgN(Image(doc, S, t),
+                                                            DueN(Image(doc, S, t), t)),
+                                                       DueC(ImgN(Image(doc, S, t),
+                                                                 DueN(Image(doc, S, t), t)), t),
+                                                       t)[i].task.leaseTimeoutAt <= t },
+                                           t) :
+                            ImgL(ImgC(ImgN(Image(doc, S, t),
+                                           DueN(Image(doc, S, t), t)),
+                                      DueC(ImgN(Image(doc, S, t),
+                                                DueN(Image(doc, S, t), t)), t),
+                                      t),
+                                 { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                          DueN(Image(doc, S, t), t)),
+                                                    DueC(ImgN(Image(doc, S, t),
+                                                              DueN(Image(doc, S, t), t)),
+                                                         t),
+                                                    t) :
+                                     ImgC(ImgN(Image(doc, S, t),
+                                               DueN(Image(doc, S, t), t)),
+                                          DueC(ImgN(Image(doc, S, t),
+                                                    DueN(Image(doc, S, t), t)), t),
+                                          t)[i].task.state = "acquired"
+                                     /\ ImgC(ImgN(Image(doc, S, t),
+                                                  DueN(Image(doc, S, t), t)),
+                                             DueC(ImgN(Image(doc, S, t),
+                                                       DueN(Image(doc, S, t), t)), t),
+                                             t)[i].task.leaseTimeoutAt <= t },
+                                 t)[j].task.state = "pending"
+                            /\ ImgL(ImgC(ImgN(Image(doc, S, t),
+                                              DueN(Image(doc, S, t), t)),
+                                         DueC(ImgN(Image(doc, S, t),
+                                                   DueN(Image(doc, S, t), t)), t),
+                                         t),
+                                    { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                             DueN(Image(doc, S, t), t)),
+                                                       DueC(ImgN(Image(doc, S, t),
+                                                                 DueN(Image(doc, S, t), t)),
+                                                            t),
+                                                       t) :
+                                        ImgC(ImgN(Image(doc, S, t),
+                                                  DueN(Image(doc, S, t), t)),
+                                             DueC(ImgN(Image(doc, S, t),
+                                                       DueN(Image(doc, S, t), t)), t),
+                                             t)[i].task.state = "acquired"
+                                        /\ ImgC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)),
+                                                DueC(ImgN(Image(doc, S, t),
+                                                          DueN(Image(doc, S, t), t)), t),
+                                                t)[i].task.leaseTimeoutAt <= t },
+                                    t)[j].task.retryTimeoutAt <= t }),
+                  Cardinality(S)
+                    + Cardinality(DueN(Image(doc, S, t), t))
+                    + Cardinality(DueC(ImgN(Image(doc, S, t),
+                                            DueN(Image(doc, S, t), t)), t))
+                    + Cardinality({ i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                           DueN(Image(doc, S, t), t)),
+                                                     DueC(ImgN(Image(doc, S, t),
+                                                               DueN(Image(doc, S, t), t)),
+                                                          t),
+                                                     t) :
+                                      ImgC(ImgN(Image(doc, S, t),
+                                                DueN(Image(doc, S, t), t)),
+                                           DueC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)), t),
+                                           t)[i].task.state = "acquired"
+                                      /\ ImgC(ImgN(Image(doc, S, t),
+                                                   DueN(Image(doc, S, t), t)),
+                                              DueC(ImgN(Image(doc, S, t),
+                                                        DueN(Image(doc, S, t), t)), t),
+                                              t)[i].task.leaseTimeoutAt <= t })
+                    + Cardinality({ j \in DOMAIN ImgL(ImgC(ImgN(Image(doc, S, t),
+                                                               DueN(Image(doc, S, t), t)),
+                                                          DueC(ImgN(Image(doc, S, t),
+                                                                    DueN(Image(doc, S, t), t)),
+                                                               t),
+                                                          t),
+                                                     { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                                              DueN(Image(doc, S, t), t)),
+                                                                        DueC(ImgN(Image(doc, S, t),
+                                                                                  DueN(Image(doc, S, t), t)),
+                                                                             t),
+                                                                        t) :
+                                                         ImgC(ImgN(Image(doc, S, t),
+                                                                   DueN(Image(doc, S, t), t)),
+                                                              DueC(ImgN(Image(doc, S, t),
+                                                                        DueN(Image(doc, S, t), t)), t),
+                                                              t)[i].task.state = "acquired"
+                                                         /\ ImgC(ImgN(Image(doc, S, t),
+                                                                      DueN(Image(doc, S, t), t)),
+                                                                 DueC(ImgN(Image(doc, S, t),
+                                                                           DueN(Image(doc, S, t), t)), t),
+                                                                 t)[i].task.leaseTimeoutAt <= t },
+                                                     t) :
+                                      ImgL(ImgC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)),
+                                                DueC(ImgN(Image(doc, S, t),
+                                                          DueN(Image(doc, S, t), t)), t),
+                                                t),
+                                           { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                                    DueN(Image(doc, S, t), t)),
+                                                              DueC(ImgN(Image(doc, S, t),
+                                                                        DueN(Image(doc, S, t), t)),
+                                                                   t),
+                                                              t) :
+                                               ImgC(ImgN(Image(doc, S, t),
+                                                         DueN(Image(doc, S, t), t)),
+                                                    DueC(ImgN(Image(doc, S, t),
+                                                              DueN(Image(doc, S, t), t)), t),
+                                                    t)[i].task.state = "acquired"
+                                               /\ ImgC(ImgN(Image(doc, S, t),
+                                                            DueN(Image(doc, S, t), t)),
+                                                       DueC(ImgN(Image(doc, S, t),
+                                                                 DueN(Image(doc, S, t), t)), t),
+                                                       t)[i].task.leaseTimeoutAt <= t },
+                                           t)[j].task.state = "pending"
+                                      /\ ImgL(ImgC(ImgN(Image(doc, S, t),
+                                                        DueN(Image(doc, S, t), t)),
+                                                   DueC(ImgN(Image(doc, S, t),
+                                                             DueN(Image(doc, S, t), t)), t),
+                                                   t),
+                                              { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                                       DueN(Image(doc, S, t), t)),
+                                                                 DueC(ImgN(Image(doc, S, t),
+                                                                           DueN(Image(doc, S, t), t)),
+                                                                      t),
+                                                                 t) :
+                                                  ImgC(ImgN(Image(doc, S, t),
+                                                            DueN(Image(doc, S, t), t)),
+                                                       DueC(ImgN(Image(doc, S, t),
+                                                                 DueN(Image(doc, S, t), t)), t),
+                                                       t)[i].task.state = "acquired"
+                                                  /\ ImgC(ImgN(Image(doc, S, t),
+                                                               DueN(Image(doc, S, t), t)),
+                                                          DueC(ImgN(Image(doc, S, t),
+                                                                    DueN(Image(doc, S, t), t)), t),
+                                                          t)[i].task.leaseTimeoutAt <= t },
+                                              t)[j].task.retryTimeoutAt <= t }))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE boxL == BoxN(box, imB, pairs, t)
+    <1> DEFINE calls == DueC(docL, t)
+    <1> DEFINE cbB == ImgC(mid, calls, t)
+    <1> DEFINE cbD == ImgC(docL, calls, t)
+    <1> DEFINE exp ==
+            { i \in DOMAIN cbD :
+                cbD[i].task.state = "acquired"
+                /\ cbD[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE n3 ==
+            Cardinality(S) + Cardinality(pairs) + Cardinality(calls)
+    <1> DEFINE ldB == ImgL(cbB, exp, t)
+    <1> DEFINE ldD == ImgL(cbD, exp, t)
+    <1> DEFINE rset ==
+            { j \in DOMAIN ldD :
+                ldD[j].task.state = "pending"
+                /\ ldD[j].task.retryTimeoutAt <= t }
+    <1> DEFINE nL == n3 + Cardinality(exp)
+    <1>1. DOMAIN doc \subseteq DOMAIN base /\ DOMAIN doc \subseteq Id
+        BY Zenon
+    <1>2. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>3. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        <2>1. S \subseteq DOMAIN base
+            BY <1>1, <1>2, Zenon
+        <2>2. QED
+            BY <1>2, <2>1, ImageDom DEF imD, imB
+    <1>4. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        BY DomImgN DEF docL, mid, imD, imB, pairs
+    <1>5. DOMAIN cbD = DOMAIN docL /\ DOMAIN cbB = DOMAIN mid
+        BY DomImgC DEF cbD, cbB, docL, mid, calls
+    <1>6. DOMAIN cbD \subseteq DOMAIN cbB /\ DOMAIN cbD \subseteq Id
+        BY <1>1, <1>3, <1>4, <1>5, Zenon
+    <1>7. \A k \in DOMAIN imD : imB[k] = imD[k]
+        BY <1>1, <1>2, AgreeImage DEF imB, imD
+    <1>8. DOMAIN imD \subseteq DOMAIN imB
+        BY <1>1, <1>3, Zenon
+    <1>9. \A k \in DOMAIN docL : mid[k] = docL[k]
+        BY <1>7, <1>8, AgreeImgN DEF imB, imD, docL, mid, pairs
+    <1>10. DOMAIN docL \subseteq DOMAIN mid
+        BY <1>1, <1>3, <1>4, Zenon
+    <1>11. \A k \in DOMAIN cbD : cbB[k] = cbD[k]
+        BY <1>9, <1>10, AgreeImgC DEF mid, docL, cbB, cbD, calls
+    <1>12. exp \subseteq DOMAIN cbD
+        BY ONLY Zenon DEF exp
+    <1>13. \A k \in DOMAIN cbD : P!Project(cbD[k], t) = cbD[k]
+        BY FixedPass DEF imD, pairs, docL, calls, cbD
+    <1>14. \A k \in DOMAIN cbD :
+              cbD[k].task.state = "acquired" =>
+                  /\ cbD[k].task.leaseTimeoutAt /= NoTime
+                  /\ cbD[k].promise.state = "pending"
+        BY <1>2, LeasePass DEF imD, pairs, docL, calls, cbD
+    <1>15. \A k \in DOMAIN cbD :
+              cbD[k].task.state = "pending" =>
+                  /\ cbD[k].task.retryTimeoutAt /= NoTime
+                  /\ cbD[k].promise.state = "pending"
+        BY <1>2, RetryPass DEF imD, pairs, docL, calls, cbD
+    <1>16. ASSUME NEW k \in exp
+           PROVE  cbD[k].promise.state = "pending"
+        <2>1. k \in DOMAIN cbD /\ cbD[k].task.state = "acquired"
+            BY ONLY <1>16, Zenon DEF exp
+        <2>2. QED
+            BY <1>14, <2>1, Zenon
+    <1>17. \A k \in exp : cbD[k].promise.state = "pending"
+        BY <1>16
+    <1>18. DOMAIN ldD = DOMAIN cbD /\ DOMAIN ldB = DOMAIN cbB
+        BY DomImgL DEF ldD, ldB, cbD, cbB, exp
+    <1>19. DOMAIN ldD \subseteq DOMAIN ldB /\ DOMAIN ldD \subseteq Id
+        BY <1>6, <1>18, Zenon
+    <1>20. \A k \in DOMAIN ldD : ldB[k] = ldD[k]
+        BY <1>6, <1>11, <1>12, AgreeImgL DEF cbB, cbD, ldB, ldD, exp
+    <1>21. \A k \in DOMAIN ldD : P!Project(ldD[k], t) = ldD[k]
+        BY <1>12, <1>13, FixedImgL DEF cbD, ldD, exp
+    <1>22. \A k \in DOMAIN ldD :
+              ldD[k].task.state = "pending" =>
+                  /\ ldD[k].task.retryTimeoutAt /= NoTime
+                  /\ ldD[k].promise.state = "pending"
+        BY <1>12, <1>15, <1>17, RetryImgL DEF cbD, ldD, exp
+    <1>23. ReachN(base, box, t, ldB, boxL, nL)
+        BY LeaseJoin DEF imB, imD, pairs, docL, mid, boxL, calls, cbB, cbD,
+                      exp, n3, ldB, nL
+    <1>24. ReachN(ldB, boxL, t, ImgR(ldB, rset, t), BoxAt(boxL, ldB, rset),
+                  Cardinality(rset))
+        BY <1>19, <1>20, <1>21, <1>22, RetryFrom DEF ldB, ldD, boxL, rset
+    <1>25. Cardinality(S) \in Nat
+        <2>1. Cardinality(S) \in 0 .. P!MaxSweep
+            BY TimeoutChain
+        <2>2. P!MaxSweep \in Nat
+            BY SweepCap
+        <2>3. QED
+            BY <2>1, <2>2, Z3
+    <1>26. Cardinality(pairs) \in Nat
+        <2>1. DOMAIN imD \subseteq Id
+            BY <1>1, <1>3, Zenon
+        <2>2. IsFiniteSet(pairs)
+            BY <2>1, PairFinite DEF pairs, imD
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>27. Cardinality(calls) \in Nat
+        <2>1. DOMAIN docL \subseteq Id
+            BY <1>1, <1>3, <1>4, Zenon
+        <2>2. IsFiniteSet(calls)
+            BY <2>1, AwFinite DEF calls, docL
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>28. n3 \in Nat
+        BY <1>25, <1>26, <1>27, Z3 DEF n3
+    <1>29. Cardinality(exp) \in Nat
+        <2>1. exp \subseteq Id
+            BY ONLY <1>6, <1>12, Zenon
+        <2>2. IsFiniteSet(exp)
+            BY ONLY <2>1, SubCap
+        <2>3. QED
+            BY ONLY <2>2, FS_CardinalityType
+    <1>30. nL \in Nat
+        BY ONLY <1>28, <1>29, Z3 DEF nL
+    <1>31. Cardinality(rset) \in Nat
+        <2>1. rset \subseteq DOMAIN ldD
+            BY ONLY Zenon DEF rset
+        <2>2. rset \subseteq Id
+            BY ONLY <1>19, <2>1, Zenon
+        <2>3. IsFiniteSet(rset)
+            BY ONLY <2>2, SubCap
+        <2>4. QED
+            BY ONLY <2>3, FS_CardinalityType
+    <1>32. ReachN(base, box, t,
+                  ImgR(ldB, rset, t), BoxAt(boxL, ldB, rset),
+                  nL + Cardinality(rset))
+        BY <1>23, <1>24, <1>30, <1>31, ReachCat DEF ldB, boxL, rset, nL
+    <1>33. QED
+        BY <1>32 DEF imB, imD, pairs, docL, mid, calls, cbB, cbD, boxL,
+                     exp, n3, ldB, ldD, rset, nL
+
 ===============================================================================
