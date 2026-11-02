@@ -619,4 +619,21 @@ PROOF
     <1>12. QED
         BY <1>11 DEF Ok
 
+(* Distinct keys on a concatenation post the union of the two ranges. *)
+LEMMA DeliverConcat ==
+    ASSUME NEW b, NEW E,
+           NEW s1 \in Seq(E), NEW s2 \in Seq(E),
+           \A i, j \in 1 .. Len(s1 \o s2) :
+              i /= j => MsgKey((s1 \o s2)[i]) /= MsgKey((s1 \o s2)[j])
+    PROVE  Deliver(b, s1 \o s2) = Posted(b, Range(s1) \cup Range(s2))
+PROOF
+    <1>1. s1 \o s2 \in Seq(E)
+        BY ConcatProperties
+    <1>2. Deliver(b, s1 \o s2) = Posted(b, Range(s1 \o s2))
+        BY <1>1, DeliverPosted
+    <1>3. Range(s1 \o s2) = Range(s1) \cup Range(s2)
+        BY RangeConcatenation
+    <1>4. QED
+        BY <1>2, <1>3, Zenon
+
 =============================================================================
