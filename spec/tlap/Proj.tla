@@ -229,4 +229,57 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+LEMMA Ax ==
+    ASSUME NEW P(_), NEW c, P(c)
+    PROVE  P(CHOOSE x : P(x))
+PROOF
+    BY Zenon
+
+(* An empty send sequence does not change the outbox. *)
+LEMMA DeliverNil ==
+    ASSUME NEW b
+    PROVE  Deliver(b, << >>) = b
+PROOF
+    <1>1. Len(<< >>) = 0
+        OBVIOUS
+    <1> DEFINE f == [n \in 0 .. 0 |-> b]
+    <1> DEFINE P(u) ==
+            u = [n \in 0 .. Len(<< >>) |->
+                    IF n = 0 THEN b
+                    ELSE LET acc == u[n - 1]
+                         IN  { x \in acc : MsgKey(x) /= MsgKey(<< >>[n]) }
+                                \cup {<< >>[n]} ]
+    <1>2. P(f)
+        BY <1>1, Z3 DEF f, P
+    <1>3. P(CHOOSE u : P(u))
+        BY <1>2, Ax DEF P
+    <1>4. \A u : P(u) => u[0] = b
+        BY Z3 DEF P
+    <1>5. (CHOOSE u : P(u))[0] = b
+        BY <1>3, <1>4, Zenon
+    <1>6. (LET upto[n \in 0 .. Len(<< >>)] ==
+                 IF n = 0 THEN b
+                 ELSE LET acc == upto[n - 1]
+                      IN  { x \in acc : MsgKey(x) /= MsgKey(<< >>[n]) }
+                             \cup {<< >>[n]}
+           IN  upto) = (CHOOSE u : P(u))
+        BY Zenon DEF P
+    <1>7. (LET upto[n \in 0 .. Len(<< >>)] ==
+                 IF n = 0 THEN b
+                 ELSE LET acc == upto[n - 1]
+                      IN  { x \in acc : MsgKey(x) /= MsgKey(<< >>[n]) }
+                             \cup {<< >>[n]}
+           IN  upto[Len(<< >>)]) = b
+        BY <1>1, <1>5, <1>6, Zenon
+    <1>8. Deliver(b, << >>) =
+            (LET upto[n \in 0 .. Len(<< >>)] ==
+                   IF n = 0 THEN b
+                   ELSE LET acc == upto[n - 1]
+                        IN  { x \in acc : MsgKey(x) /= MsgKey(<< >>[n]) }
+                               \cup {<< >>[n]}
+             IN  upto[Len(<< >>)])
+        BY Zenon DEF Deliver
+    <1>9. QED
+        BY <1>7, <1>8, Zenon
+
 ===============================================================================
