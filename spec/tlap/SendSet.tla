@@ -565,4 +565,33 @@ PROOF
     <1>6. QED
         BY <1>4, <1>5
 
+(* Timeout, callbacks, and leases send nothing, so a sweep's outbox is the
+   listener list followed by the retry list. Distinct tags keep the keys
+   apart, and delivery posts the union. *)
+LEMMA SweepDeliver ==
+    ASSUME NEW b, NEW doc, NEW t, NEW E,
+           NEW heard \in Seq(E), NEW retried \in Seq(E),
+           heard = SweepListeners(SweepTimeoutAt(doc, t).doc, t).sends,
+           retried
+             = SweepRetryAt(SweepExpiresAt(
+                   SweepCallbacks(
+                       SweepListeners(SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                   t).doc, t).sends,
+           \A n \in 1 .. Len(heard) : heard[n].message.tag = "Unblock",
+           \A n \in 1 .. Len(retried) : retried[n].message.tag = "Execute",
+           \A i, j \in 1 .. Len(heard) :
+              i /= j => MsgKey(heard[i]) /= MsgKey(heard[j]),
+           \A i, j \in 1 .. Len(retried) :
+              i /= j => MsgKey(retried[i]) /= MsgKey(retried[j])
+    PROVE  Deliver(b, Sweep(doc, t).sends)
+              = Posted(b, Range(heard) \cup Range(retried))
+PROOF
+    <1>1. Sweep(doc, t).sends = heard \o retried
+        BY SweepSends
+    <1>2. Deliver(b, heard \o retried)
+            = Posted(b, Range(heard) \cup Range(retried))
+        BY TwoPass
+    <1>3. QED
+        BY <1>1, <1>2
+
 =============================================================================
