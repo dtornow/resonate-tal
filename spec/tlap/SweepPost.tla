@@ -102,6 +102,36 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+(* The listener set of a timeout pass is finite when the store started finite. *)
+LEMMA ListenDueFinite ==
+    ASSUME NEW doc, NEW t, NEW P, DOMAIN doc \subseteq Id,
+           P = { x \in [id : { i \in DOMAIN SweepTimeoutAt(doc, t).doc :
+                                 SweepTimeoutAt(doc, t).doc[i].promise.state
+                                   /= "pending" },
+                        address : Address] :
+                   x.address
+                     \in SweepTimeoutAt(doc, t).doc[x.id].promise.listeners }
+    PROVE  IsFiniteSet(P)
+PROOF
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1>1. DOMAIN tdoc = DOMAIN doc
+        BY TimeoutDom DEF tdoc
+    <1>2. DOMAIN tdoc \subseteq Id
+        BY <1>1
+    <1>3. IsFiniteSet(
+              { x \in [id : { i \in DOMAIN tdoc :
+                                 tdoc[i].promise.state /= "pending" },
+                       address : Address] :
+                   x.address \in tdoc[x.id].promise.listeners })
+        BY <1>2, ListenFinite
+    <1>4. P = { x \in [id : { i \in DOMAIN tdoc :
+                                 tdoc[i].promise.state /= "pending" },
+                       address : Address] :
+                  x.address \in tdoc[x.id].promise.listeners }
+        BY DEF tdoc
+    <1>5. QED
+        BY <1>3, <1>4
+
 LEMMA SweepPosted ==
     ASSUME NEW b, NEW doc, NEW t,
            NEW P, NEW S, NEW heard, NEW retried,
