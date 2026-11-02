@@ -2783,4 +2783,433 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2, Z3
 
+(* A due promise fulfills its task, so a suspended task that remains was
+   not due, and it still has a pending promise. *)
+LEMMA ShapeSuspend ==
+    ASSUME NEW obj, NEW t,
+           obj.task.state = "suspended" => obj.promise.state = "pending"
+    PROVE  P!Project(obj, t).task.state = "suspended" =>
+               P!Project(obj, t).promise.state = "pending"
+PROOF
+    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
+        <2> DEFINE p == P!Project(obj, t)
+        <2> DEFINE ts == IF obj.task.state = "none" THEN "none" ELSE "fulfilled"
+        <2> DEFINE task1 ==
+                [obj.task EXCEPT !.state          = ts,
+                                 !.pid            = NoPid,
+                                 !.ttl            = P!NoTime,
+                                 !.leaseTimeoutAt = P!NoTime,
+                                 !.retryTimeoutAt = P!NoTime,
+                                 !.resumes        = {}]
+        <2>1. p.task = task1
+            BY <1>1, Z3 DEF p, ts, task1, P!Project
+        <2>2. task1.state = ts
+            BY Z3 DEF task1
+        <2>3. ts = "none" \/ ts = "fulfilled"
+            BY Z3 DEF ts
+        <2>4. p.task.state = task1.state
+            BY <2>1, Z3
+        <2>5. p.task.state = ts
+            BY <2>2, <2>4, Z3
+        <2>6. p.task.state = "none" \/ p.task.state = "fulfilled"
+            BY <2>3, <2>5, Z3
+        <2>7. QED
+            BY <2>6, Z3 DEF p
+    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
+        <2>1. P!Project(obj, t) = obj
+            BY <1>2, ProjectId
+        <2>2. QED
+            BY <2>1, Zenon
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA SuspendOn ==
+    ASSUME NEW doc, NEW t, NEW S,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+               Image(doc, S, t)[k].task.state = "suspended" =>
+                   Image(doc, S, t)[k].promise.state = "pending"
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(doc, S, t)[k].task.state = "suspended" =>
+                     Image(doc, S, t)[k].promise.state = "pending"
+        <2>1. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                    = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>2, ImageVal
+        <2>2. CASE k \in S
+            <3>1. Image(doc, S, t)[k] = P!Project(doc[k], t)
+                BY <2>1, <2>2
+            <3>2. doc[k].task.state = "suspended" =>
+                      doc[k].promise.state = "pending"
+                BY <1>2, Zenon
+            <3>3. P!Project(doc[k], t).task.state = "suspended" =>
+                      P!Project(doc[k], t).promise.state = "pending"
+                BY <3>2, ShapeSuspend
+            <3>4. QED
+                BY <3>1, <3>3, Zenon
+        <2>3. CASE k \notin S
+            <3>1. Image(doc, S, t)[k] = doc[k]
+                BY <2>1, <2>3
+            <3>2. QED
+                BY <1>2, <3>1, Zenon
+        <2>4. QED
+            BY <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA PromiseGuard ==
+    ASSUME NEW a, NEW b, NEW t,
+           P!Project(a, t) = a,
+           b.promise.state = a.promise.state,
+           b.promise.timeoutAt = a.promise.timeoutAt
+    PROVE  P!Project(b, t) = b
+PROOF
+    <1>1. \/ a.promise.state /= "pending"
+          \/ ~(a.promise.timeoutAt <= t)
+        BY GuardHeld
+    <1>2. \/ b.promise.state /= "pending"
+          \/ ~(b.promise.timeoutAt <= t)
+        BY <1>1, Zenon
+    <1>3. QED
+        BY <1>2, ProjectId
+
+LEMMA ProjectWake ==
+    ASSUME NEW obj, NEW srcs, NEW t,
+           P!Project(obj, t) = obj
+    PROVE  P!Project(Woken(obj, srcs, t), t) = Woken(obj, srcs, t)
+PROOF
+    <1> DEFINE w == Woken(obj, srcs, t)
+    <1>1. CASE srcs = {}
+        <2>1. w = obj
+            BY <1>1, Z3 DEF w, Woken
+        <2>2. QED
+            BY <2>1, Zenon DEF w
+    <1>2. CASE srcs # {} /\ obj.task.state \in {"none", "fulfilled"}
+        <2>1. w = obj
+            BY <1>2, Z3 DEF w, Woken
+        <2>2. QED
+            BY <2>1, Zenon DEF w
+    <1>3. CASE srcs # {} /\ obj.task.state = "suspended"
+        <2> DEFINE wk == P!WakeSuspended(obj, srcs, t)
+        <2>1. w = wk
+            BY <1>3, Z3 DEF w, Woken, wk
+        <2>2. wk.promise = obj.promise
+            BY Z3 DEF wk, P!WakeSuspended
+        <2>3. /\ wk.promise.state = obj.promise.state
+              /\ wk.promise.timeoutAt = obj.promise.timeoutAt
+            BY <2>2, Z3
+        <2>4. P!Project(wk, t) = wk
+            BY <2>3, PromiseGuard DEF wk
+        <2>5. QED
+            BY <2>1, <2>4, Zenon DEF w, wk
+    <1>4. CASE srcs # {} /\ obj.task.state \notin {"none", "fulfilled"}
+                       /\ obj.task.state /= "suspended"
+        <2> DEFINE un == P!UnionResumes(obj, srcs)
+        <2>1. w = un
+            BY <1>4, Z3 DEF w, Woken, un
+        <2>2. un.promise = obj.promise
+            BY Z3 DEF un, P!UnionResumes
+        <2>3. /\ un.promise.state = obj.promise.state
+              /\ un.promise.timeoutAt = obj.promise.timeoutAt
+            BY <2>2, Z3
+        <2>4. P!Project(un, t) = un
+            BY <2>3, PromiseGuard DEF un
+        <2>5. QED
+            BY <2>1, <2>4, Zenon DEF w, un
+    <1>5. QED
+        BY <1>1, <1>2, <1>3, <1>4
+
+LEMMA ProjectCleared ==
+    ASSUME NEW doc, NEW S, NEW j, NEW t,
+           P!Project(doc[j], t) = doc[j]
+    PROVE  P!Project(Cleared(doc, S, j), t) = Cleared(doc, S, j)
+PROOF
+    <1> DEFINE g == Drp(j, S)
+    <1> DEFINE c == Cleared(doc, S, j)
+    <1>1. c = (IF g = {} THEN doc[j] ELSE P!WithoutCallbacks(doc[j], g))
+        BY DEF c, Cleared, g
+    <1>2. CASE g = {}
+        <2>1. c = doc[j]
+            BY <1>1, <1>2, Z3 DEF c
+        <2>2. QED
+            BY <2>1, Zenon DEF c
+    <1>3. CASE g # {}
+        <2> DEFINE u == P!WithoutCallbacks(doc[j], g)
+        <2>1. c = u
+            BY <1>1, <1>3, Z3 DEF c, u
+        <2>2. P!Project(u, t) = u
+            BY ProjectClear DEF u
+        <2>3. QED
+            BY <2>1, <2>2, Zenon DEF c
+    <1>4. QED
+        BY <1>2, <1>3
+
+LEMMA ProjectBodyC ==
+    ASSUME NEW doc, NEW S, NEW j, NEW t,
+           P!Project(doc[j], t) = doc[j]
+    PROVE  P!Project(BodyC(doc, S, j, t), t) = BodyC(doc, S, j, t)
+PROOF
+    <1> DEFINE c == Cleared(doc, S, j)
+    <1> DEFINE srcs == Src(j, S)
+    <1> DEFINE b == BodyC(doc, S, j, t)
+    <1>1. P!Project(c, t) = c
+        BY ProjectCleared DEF c
+    <1>2. P!Project(Woken(c, srcs, t), t) = Woken(c, srcs, t)
+        BY <1>1, ProjectWake DEF c, srcs
+    <1>3. b = Woken(c, srcs, t)
+        BY DEF b, BodyC, c, srcs
+    <1>4. QED
+        BY <1>2, <1>3, Zenon DEF b
+
+LEMMA FixedImgN ==
+    ASSUME NEW doc, NEW t, NEW Q,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k]
+    PROVE  \A k \in DOMAIN ImgN(doc, Q) :
+               P!Project(ImgN(doc, Q)[k], t) = ImgN(doc, Q)[k]
+PROOF
+    <1>1. DOMAIN ImgN(doc, Q) = DOMAIN doc
+        BY DomImgN
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  P!Project(ImgN(doc, Q)[k], t) = ImgN(doc, Q)[k]
+        <2> DEFINE obj == doc[k]
+        <2>1. obj = doc[k] /\ P!Project(obj, t) = obj
+            BY <1>2, Zenon DEF obj
+        <2>2. /\ k \in DOMAIN ImgN(doc, Q)
+              /\ P!Project(ImgN(doc, Q)[k], t) = ImgN(doc, Q)[k]
+            BY <1>2, <2>1, StillFixed DEF obj
+        <2>3. QED
+            BY <2>2, Zenon
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA FixedImgC ==
+    ASSUME NEW doc, NEW S, NEW t,
+           \A k \in DOMAIN doc : P!Project(doc[k], t) = doc[k]
+    PROVE  \A k \in DOMAIN ImgC(doc, S, t) :
+               P!Project(ImgC(doc, S, t)[k], t) = ImgC(doc, S, t)[k]
+PROOF
+    <1>1. DOMAIN ImgC(doc, S, t) = DOMAIN doc
+        BY DomImgC
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  P!Project(ImgC(doc, S, t)[k], t) = ImgC(doc, S, t)[k]
+        <2>1. P!Project(doc[k], t) = doc[k]
+            BY <1>2, Zenon
+        <2>2. P!Project(BodyC(doc, S, k, t), t) = BodyC(doc, S, k, t)
+            BY <2>1, ProjectBodyC
+        <2>3. CASE S = {}
+            <3>1. ImgC(doc, S, t) = doc
+                BY <2>3 DEF ImgC
+            <3>2. ImgC(doc, S, t)[k] = doc[k]
+                BY <1>2, <3>1, Zenon
+            <3>3. QED
+                BY <2>1, <3>2, Zenon
+        <2>4. CASE S # {}
+            <3> DEFINE im == [ j \in DOMAIN doc |-> BodyC(doc, S, j, t) ]
+            <3>1. ImgC(doc, S, t) = im
+                BY <2>4 DEF ImgC, im
+            <3>2. DOMAIN im = DOMAIN doc
+                BY DomCtor DEF im
+            <3>3. im[k] = BodyC(doc, S, k, t)
+                BY <1>2, <3>2, Zenon DEF im
+            <3>4. QED
+                BY <2>2, <3>1, <3>3, Zenon
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+(* The timeout image is already projected, and listeners and callbacks
+   keep each object equal to its projection. *)
+LEMMA FixedPass ==
+    ASSUME NEW doc, NEW t, NEW S, NEW Q, NEW C,
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t }
+    PROVE  \A k \in DOMAIN ImgC(ImgN(Image(doc, S, t), Q), C, t) :
+               P!Project(ImgC(ImgN(Image(doc, S, t), Q), C, t)[k], t)
+                  = ImgC(ImgN(Image(doc, S, t), Q), C, t)[k]
+PROOF
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE ln == ImgN(im, Q)
+    <1> DEFINE cb == ImgC(ln, C, t)
+    <1>1. \A k \in DOMAIN doc : P!Project(im[k], t) = im[k]
+        BY SliceFixed DEF im
+    <1>2. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>3. DOMAIN im = DOMAIN doc
+        BY <1>2, ImageDom DEF im
+    <1>4. \A k \in DOMAIN im : P!Project(im[k], t) = im[k]
+        BY <1>1, <1>3, Z3 DEF im
+    <1>5. \A k \in DOMAIN ln : P!Project(ln[k], t) = ln[k]
+        BY <1>4, FixedImgN DEF ln
+    <1>6. QED
+        BY <1>5, FixedImgC DEF ln, cb
+
+LEMMA LeasePass ==
+    ASSUME NEW doc, NEW t, NEW S, NEW Q, NEW C,
+           S \subseteq DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN ImgC(ImgN(Image(doc, S, t), Q), C, t) :
+               ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].task.state = "acquired" =>
+                   /\ ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].task.leaseTimeoutAt /= NoTime
+                   /\ ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].promise.state = "pending"
+PROOF
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE ln == ImgN(im, Q)
+    <1> DEFINE cb == ImgC(ln, C, t)
+    <1>1. \A k \in DOMAIN im :
+              im[k].task.state = "acquired" =>
+                  /\ im[k].task.leaseTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY LeaseOn DEF im
+    <1>2. \A k \in DOMAIN im :
+              im[k].task.state = "pending" =>
+                  /\ im[k].task.retryTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY RetryOn DEF im
+    <1>3. \A k \in DOMAIN im :
+              im[k].task.state = "suspended" =>
+                  im[k].promise.state = "pending"
+        BY SuspendOn DEF im
+    <1>4. \A k \in DOMAIN ln :
+              ln[k].task.state = "acquired" =>
+                  /\ ln[k].task.leaseTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, LeaseN DEF ln
+    <1>5. \A k \in DOMAIN ln :
+              ln[k].task.state = "pending" =>
+                  /\ ln[k].task.retryTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, RetryN DEF ln
+    <1>6. \A k \in DOMAIN ln :
+              ln[k].task.state = "suspended" =>
+                  ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, SuspendN DEF ln
+    <1>7. QED
+        BY <1>4, <1>5, <1>6, LeaseC DEF ln, cb
+
+LEMMA RetryPass ==
+    ASSUME NEW doc, NEW t, NEW S, NEW Q, NEW C,
+           S \subseteq DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN ImgC(ImgN(Image(doc, S, t), Q), C, t) :
+               ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].task.state = "pending" =>
+                   /\ ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].task.retryTimeoutAt /= NoTime
+                   /\ ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].promise.state = "pending"
+PROOF
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE ln == ImgN(im, Q)
+    <1> DEFINE cb == ImgC(ln, C, t)
+    <1>1. \A k \in DOMAIN im :
+              im[k].task.state = "acquired" =>
+                  /\ im[k].task.leaseTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY LeaseOn DEF im
+    <1>2. \A k \in DOMAIN im :
+              im[k].task.state = "pending" =>
+                  /\ im[k].task.retryTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY RetryOn DEF im
+    <1>3. \A k \in DOMAIN im :
+              im[k].task.state = "suspended" =>
+                  im[k].promise.state = "pending"
+        BY SuspendOn DEF im
+    <1>4. \A k \in DOMAIN ln :
+              ln[k].task.state = "acquired" =>
+                  /\ ln[k].task.leaseTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, LeaseN DEF ln
+    <1>5. \A k \in DOMAIN ln :
+              ln[k].task.state = "pending" =>
+                  /\ ln[k].task.retryTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, RetryN DEF ln
+    <1>6. \A k \in DOMAIN ln :
+              ln[k].task.state = "suspended" =>
+                  ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, SuspendN DEF ln
+    <1>7. QED
+        BY <1>4, <1>5, <1>6, RetryC DEF ln, cb
+
+LEMMA SuspendPass ==
+    ASSUME NEW doc, NEW t, NEW S, NEW Q, NEW C,
+           S \subseteq DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  \A k \in DOMAIN ImgC(ImgN(Image(doc, S, t), Q), C, t) :
+               ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].task.state = "suspended" =>
+                   ImgC(ImgN(Image(doc, S, t), Q), C, t)[k].promise.state = "pending"
+PROOF
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE ln == ImgN(im, Q)
+    <1> DEFINE cb == ImgC(ln, C, t)
+    <1>1. \A k \in DOMAIN im :
+              im[k].task.state = "acquired" =>
+                  /\ im[k].task.leaseTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY LeaseOn DEF im
+    <1>2. \A k \in DOMAIN im :
+              im[k].task.state = "pending" =>
+                  /\ im[k].task.retryTimeoutAt /= NoTime
+                  /\ im[k].promise.state = "pending"
+        BY RetryOn DEF im
+    <1>3. \A k \in DOMAIN im :
+              im[k].task.state = "suspended" =>
+                  im[k].promise.state = "pending"
+        BY SuspendOn DEF im
+    <1>4. \A k \in DOMAIN ln :
+              ln[k].task.state = "acquired" =>
+                  /\ ln[k].task.leaseTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, LeaseN DEF ln
+    <1>5. \A k \in DOMAIN ln :
+              ln[k].task.state = "pending" =>
+                  /\ ln[k].task.retryTimeoutAt /= NoTime
+                  /\ ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, RetryN DEF ln
+    <1>6. \A k \in DOMAIN ln :
+              ln[k].task.state = "suspended" =>
+                  ln[k].promise.state = "pending"
+        BY <1>1, <1>2, <1>3, SuspendN DEF ln
+    <1>7. QED
+        BY <1>4, <1>5, <1>6, SuspendC DEF ln, cb
+
 ===============================================================================
