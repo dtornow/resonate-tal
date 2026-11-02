@@ -3,6 +3,105 @@
    post the union, which is what a sweep writes into the outbox. *)
 EXTENDS SendSet, PassTag
 
+(* A retry id is an element of the document, so a document whose domain
+   sits in Id has finitely many due retries. *)
+LEMMA RetryFinite ==
+    ASSUME NEW doc, NEW t, DOMAIN doc \subseteq Id
+    PROVE  IsFiniteSet({ i \in DOMAIN doc :
+                           doc[i].task.state = "pending"
+                           /\ doc[i].task.retryTimeoutAt <= t })
+PROOF
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "pending"
+                /\ doc[i].task.retryTimeoutAt <= t }
+    <1>1. S \subseteq DOMAIN doc
+        BY DEF S
+    <1>2. S \subseteq Id
+        BY <1>1
+    <1>3. IsFiniteSet(Id)
+        BY FiniteOrigin, FiniteRest, IdFinite
+    <1>4. QED
+        BY <1>2, <1>3, FS_Subset DEF S
+
+(* A listener pair is an id from that same domain together with an address. *)
+LEMMA ListenFinite ==
+    ASSUME NEW doc, DOMAIN doc \subseteq Id
+    PROVE  IsFiniteSet(
+              { x \in [id : { i \in DOMAIN doc :
+                                 doc[i].promise.state /= "pending" },
+                       address : Address] :
+                   x.address \in doc[x.id].promise.listeners })
+PROOF
+    <1> DEFINE P ==
+            { x \in [id : { i \in DOMAIN doc :
+                               doc[i].promise.state /= "pending" },
+                     address : Address] :
+                 x.address \in doc[x.id].promise.listeners }
+    <1> DEFINE Op(p) == [id |-> p[1], address |-> p[2]]
+    <1> DEFINE Img == { Op(p) : p \in Id \X Address }
+    <1>1. IsFiniteSet(Id) /\ IsFiniteSet(Address)
+        BY FiniteOrigin, FiniteRest, FiniteAddress, IdFinite
+    <1>2. IsFiniteSet(Id \X Address)
+        BY <1>1, FS_Product
+    <1>3. LET T == { Op(x) : x \in Id \X Address }
+          IN  IsFiniteSet(T)
+        BY <1>2, FS_Image
+    <1>4. IsFiniteSet(Img)
+        BY <1>3 DEF Img
+    <1>5. P \subseteq Img
+        <2> SUFFICES ASSUME NEW x \in P
+                     PROVE  x \in Img
+            OBVIOUS
+        <2>1. x \in [id : { i \in DOMAIN doc :
+                               doc[i].promise.state /= "pending" },
+                     address : Address]
+            BY DEF P
+        <2>2. x.id \in DOMAIN doc /\ x.address \in Address
+            BY <2>1, Z3
+        <2>3. x.id \in Id
+            BY <2>2
+        <2> DEFINE p == <<x.id, x.address>>
+        <2>4. p \in Id \X Address
+            BY <2>2, <2>3, PairIn DEF p
+        <2>5. x = [id |-> x.id, address |-> x.address]
+            BY <2>1, Isa
+        <2>6. x = Op(p)
+            BY <2>5 DEF Op, p
+        <2>7. QED
+            BY <2>4, <2>6 DEF Img
+    <1>6. QED
+        BY <1>4, <1>5, FS_Subset DEF P
+
+(* The timeout pass rewrites records in place, so the domain is unchanged.
+   Later passes can inherit finiteness from the document they start on. *)
+LEMMA TimeoutDom ==
+    ASSUME NEW doc, NEW t
+    PROVE  DOMAIN SweepTimeoutAt(doc, t).doc = DOMAIN doc
+PROOF
+    <1> DEFINE due ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE sw == SweepTimeoutAt(doc, t).doc
+    <1>1. CASE due = {}
+        <2>1. sw = doc
+            BY <1>1 DEF due, sw, SweepTimeoutAt
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE due # {}
+        <2>1. sw = [ i \in DOMAIN doc |->
+                       IF i \in due THEN Project(doc[i], t) ELSE doc[i] ]
+            BY <1>2 DEF due, sw, SweepTimeoutAt
+        <2>2. DOMAIN [ i \in DOMAIN doc |->
+                         IF i \in due THEN Project(doc[i], t) ELSE doc[i] ]
+                = DOMAIN doc
+            BY DomCtor
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
 LEMMA SweepPosted ==
     ASSUME NEW b, NEW doc, NEW t,
            NEW P, NEW S, NEW heard, NEW retried,
