@@ -3212,4 +3212,279 @@ PROOF
     <1>7. QED
         BY <1>4, <1>5, <1>6, SuspendC DEF ln, cb
 
+(* A slice that agrees with the store still agrees after the timeout image. *)
+LEMMA AgreeImage ==
+    ASSUME NEW base, NEW doc, NEW t, NEW S,
+           DOMAIN doc \subseteq DOMAIN base,
+           S \subseteq DOMAIN doc,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  \A k \in DOMAIN Image(doc, S, t) :
+               Image(base, S, t)[k] = Image(doc, S, t)[k]
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. S \subseteq DOMAIN base
+        BY Zenon
+    <1>3. ASSUME NEW k \in DOMAIN doc
+          PROVE  Image(base, S, t)[k] = Image(doc, S, t)[k]
+        <2>1. base[k] = doc[k]
+            BY <1>3, Zenon
+        <2>2. k \in DOMAIN base
+            BY <1>3, Zenon
+        <2>3. /\ k \in DOMAIN Image(doc, S, t)
+              /\ Image(doc, S, t)[k]
+                    = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+            BY <1>3, ImageVal
+        <2>4. /\ k \in DOMAIN Image(base, S, t)
+              /\ Image(base, S, t)[k]
+                    = IF k \in S THEN P!Project(base[k], t) ELSE base[k]
+            BY <1>2, <2>2, ImageVal
+        <2>5. P!Project(base[k], t) = P!Project(doc[k], t)
+            BY <2>1, Zenon
+        <2>6. QED
+            BY <2>1, <2>3, <2>4, <2>5, Z3
+    <1>4. QED
+        BY <1>1, <1>3, Z3
+
+LEMMA AgreeImgN ==
+    ASSUME NEW base, NEW doc, NEW Q,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  \A k \in DOMAIN ImgN(doc, Q) :
+               ImgN(base, Q)[k] = ImgN(doc, Q)[k]
+PROOF
+    <1>1. DOMAIN ImgN(doc, Q) = DOMAIN doc
+        BY DomImgN
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  ImgN(base, Q)[k] = ImgN(doc, Q)[k]
+        <2>1. base[k] = doc[k]
+            BY <1>2, Zenon
+        <2>2. k \in DOMAIN base
+            BY <1>2, Zenon
+        <2>3. CASE Q = {}
+            <3>1. ImgN(base, Q) = base /\ ImgN(doc, Q) = doc
+                BY <2>3 DEF ImgN
+            <3>2. QED
+                BY <2>1, <2>2, <3>1, Zenon
+        <2>4. CASE Q # {}
+            <3> DEFINE bB == [ j \in DOMAIN base |-> BodyN(base, Q, j) ]
+            <3> DEFINE bD == [ j \in DOMAIN doc |-> BodyN(doc, Q, j) ]
+            <3>1. ImgN(base, Q) = bB /\ ImgN(doc, Q) = bD
+                BY <2>4 DEF ImgN, bB, bD
+            <3>2. DOMAIN bB = DOMAIN base /\ DOMAIN bD = DOMAIN doc
+                BY DomCtor DEF bB, bD
+            <3>3. bB[k] = BodyN(base, Q, k)
+                BY <2>2, <3>2, Zenon DEF bB
+            <3>4. bD[k] = BodyN(doc, Q, k)
+                BY <1>2, <3>2, Zenon DEF bD
+            <3>5. BodyN(base, Q, k) = BodyN(doc, Q, k)
+                BY <2>1, SameBody
+            <3>6. QED
+                BY <3>1, <3>3, <3>4, <3>5, Zenon
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+LEMMA AgreeImgC ==
+    ASSUME NEW base, NEW doc, NEW S, NEW t,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  \A k \in DOMAIN ImgC(doc, S, t) :
+               ImgC(base, S, t)[k] = ImgC(doc, S, t)[k]
+PROOF
+    <1>1. DOMAIN ImgC(doc, S, t) = DOMAIN doc
+        BY DomImgC
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  ImgC(base, S, t)[k] = ImgC(doc, S, t)[k]
+        <2>1. base[k] = doc[k]
+            BY <1>2, Zenon
+        <2>2. k \in DOMAIN base
+            BY <1>2, Zenon
+        <2>3. CASE S = {}
+            <3>1. ImgC(base, S, t) = base /\ ImgC(doc, S, t) = doc
+                BY <2>3 DEF ImgC
+            <3>2. QED
+                BY <2>1, <2>2, <3>1, Zenon
+        <2>4. CASE S # {}
+            <3> DEFINE bB == [ j \in DOMAIN base |-> BodyC(base, S, j, t) ]
+            <3> DEFINE bD == [ j \in DOMAIN doc |-> BodyC(doc, S, j, t) ]
+            <3>1. ImgC(base, S, t) = bB /\ ImgC(doc, S, t) = bD
+                BY <2>4 DEF ImgC, bB, bD
+            <3>2. DOMAIN bB = DOMAIN base /\ DOMAIN bD = DOMAIN doc
+                BY DomCtor DEF bB, bD
+            <3>3. bB[k] = BodyC(base, S, k, t)
+                BY <2>2, <3>2, Zenon DEF bB
+            <3>4. bD[k] = BodyC(doc, S, k, t)
+                BY <1>2, <3>2, Zenon DEF bD
+            <3>5. BodyC(base, S, k, t) = BodyC(doc, S, k, t)
+                BY <2>1, SameBodyC
+            <3>6. QED
+                BY <3>1, <3>3, <3>4, <3>5, Zenon
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+(* Timeouts, listeners, and callbacks, then the due leases of that
+   document. The outbox is still the listener outbox. *)
+LEMMA LeaseJoin ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           S = { i \in DOMAIN doc :
+                   doc[i].promise.state = "pending"
+                   /\ doc[i].promise.timeoutAt <= t },
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  ReachN(base, box, t,
+                  ImgL(ImgC(ImgN(Image(base, S, t),
+                                 DueN(Image(doc, S, t), t)),
+                            DueC(ImgN(Image(doc, S, t),
+                                      DueN(Image(doc, S, t), t)), t),
+                            t),
+                       { i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                DueN(Image(doc, S, t), t)),
+                                          DueC(ImgN(Image(doc, S, t),
+                                                    DueN(Image(doc, S, t), t)),
+                                               t),
+                                          t) :
+                           ImgC(ImgN(Image(doc, S, t),
+                                     DueN(Image(doc, S, t), t)),
+                                DueC(ImgN(Image(doc, S, t),
+                                          DueN(Image(doc, S, t), t)), t),
+                                t)[i].task.state = "acquired"
+                           /\ ImgC(ImgN(Image(doc, S, t),
+                                        DueN(Image(doc, S, t), t)),
+                                   DueC(ImgN(Image(doc, S, t),
+                                             DueN(Image(doc, S, t), t)), t),
+                                   t)[i].task.leaseTimeoutAt <= t },
+                       t),
+                  BoxN(box, Image(base, S, t), DueN(Image(doc, S, t), t), t),
+                  Cardinality(S)
+                    + Cardinality(DueN(Image(doc, S, t), t))
+                    + Cardinality(DueC(ImgN(Image(doc, S, t),
+                                            DueN(Image(doc, S, t), t)), t))
+                    + Cardinality({ i \in DOMAIN ImgC(ImgN(Image(doc, S, t),
+                                                           DueN(Image(doc, S, t), t)),
+                                                     DueC(ImgN(Image(doc, S, t),
+                                                               DueN(Image(doc, S, t), t)),
+                                                          t),
+                                                     t) :
+                                      ImgC(ImgN(Image(doc, S, t),
+                                                DueN(Image(doc, S, t), t)),
+                                           DueC(ImgN(Image(doc, S, t),
+                                                     DueN(Image(doc, S, t), t)), t),
+                                           t)[i].task.state = "acquired"
+                                      /\ ImgC(ImgN(Image(doc, S, t),
+                                                   DueN(Image(doc, S, t), t)),
+                                              DueC(ImgN(Image(doc, S, t),
+                                                        DueN(Image(doc, S, t), t)),
+                                                 t),
+                                              t)[i].task.leaseTimeoutAt <= t }))
+PROOF
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE boxL == BoxN(box, imB, pairs, t)
+    <1> DEFINE calls == DueC(docL, t)
+    <1> DEFINE cbB == ImgC(mid, calls, t)
+    <1> DEFINE cbD == ImgC(docL, calls, t)
+    <1> DEFINE exp ==
+            { i \in DOMAIN cbD :
+                cbD[i].task.state = "acquired"
+                /\ cbD[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE n3 ==
+            Cardinality(S) + Cardinality(pairs) + Cardinality(calls)
+    <1>1. DOMAIN doc \subseteq DOMAIN base /\ DOMAIN doc \subseteq Id
+        BY Zenon
+    <1>2. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>3. S \subseteq DOMAIN base
+        BY <1>1, <1>2, Zenon
+    <1>4. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>2, <1>3, ImageDom DEF imD, imB
+    <1>5. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        BY DomImgN DEF docL, mid, imD, imB, pairs
+    <1>6. DOMAIN cbD = DOMAIN docL /\ DOMAIN cbB = DOMAIN mid
+        BY DomImgC DEF cbD, cbB, docL, mid, calls
+    <1>7. DOMAIN cbD \subseteq DOMAIN cbB /\ DOMAIN cbD \subseteq Id
+        BY <1>1, <1>4, <1>5, <1>6, Zenon DEF cbD, cbB
+    <1>8. \A k \in DOMAIN imD : imB[k] = imD[k]
+        BY <1>1, <1>2, AgreeImage DEF imB, imD
+    <1>9. DOMAIN imD \subseteq DOMAIN imB
+        BY <1>1, <1>4, Zenon DEF imD, imB
+    <1>10. \A k \in DOMAIN docL : mid[k] = docL[k]
+        BY <1>8, <1>9, AgreeImgN DEF imB, imD, docL, mid, pairs
+    <1>11. DOMAIN docL \subseteq DOMAIN mid
+        BY <1>1, <1>4, <1>5, Zenon DEF docL, mid
+    <1>12. \A k \in DOMAIN cbD : cbB[k] = cbD[k]
+        BY <1>10, <1>11, AgreeImgC DEF mid, docL, cbB, cbD, calls
+    <1>13. \A k \in DOMAIN cbD : P!Project(cbD[k], t) = cbD[k]
+        BY FixedPass DEF imD, pairs, docL, calls, cbD
+    <1>14. \A k \in DOMAIN cbD :
+              cbD[k].task.state = "acquired" =>
+                  /\ cbD[k].task.leaseTimeoutAt /= NoTime
+                  /\ cbD[k].promise.state = "pending"
+        BY <1>2, LeasePass DEF imD, pairs, docL, calls, cbD
+    <1>15. ReachN(base, box, t, cbB, boxL, n3)
+        BY ThreePass DEF imB, imD, pairs, docL, mid, boxL, calls, cbB, n3
+    <1>16. ReachN(cbB, boxL, t, ImgL(cbB, exp, t), boxL, Cardinality(exp))
+        BY <1>7, <1>12, <1>13, <1>14, LeaseFrom DEF cbB, cbD, boxL, exp
+    <1>17. Cardinality(S) \in Nat
+        <2>1. Cardinality(S) \in 0 .. P!MaxSweep
+            BY TimeoutChain
+        <2>2. P!MaxSweep \in Nat
+            BY SweepCap
+        <2>3. QED
+            BY <2>1, <2>2, Z3
+    <1>18. Cardinality(pairs) \in Nat
+        <2>1. DOMAIN imD \subseteq Id
+            BY <1>1, <1>4, Zenon DEF imD
+        <2>2. IsFiniteSet(pairs)
+            BY <2>1, PairFinite DEF pairs, imD
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>19. Cardinality(calls) \in Nat
+        <2>1. DOMAIN docL \subseteq Id
+            BY <1>1, <1>4, <1>5, Zenon DEF docL, imD
+        <2>2. IsFiniteSet(calls)
+            BY <2>1, AwFinite DEF calls, docL
+        <2>3. QED
+            BY <2>2, FS_CardinalityType
+    <1>20. n3 \in Nat
+        BY <1>17, <1>18, <1>19, Z3 DEF n3
+    <1>21. Cardinality(exp) \in Nat
+        <2>1. exp \subseteq DOMAIN cbD
+            BY ONLY Zenon DEF exp
+        <2>2. exp \subseteq Id
+            BY ONLY <1>7, <2>1, Zenon
+        <2>3. IsFiniteSet(exp) /\ Cardinality(exp) \in 0 .. P!MaxSweep
+            BY ONLY <2>2, SubCap
+        <2>4. IsFiniteSet(exp)
+            BY ONLY <2>3, Zenon
+        <2>5. QED
+            BY ONLY <2>4, FS_CardinalityType
+    <1>22. ReachN(base, box, t, ImgL(cbB, exp, t), boxL, n3 + Cardinality(exp))
+        BY <1>15, <1>16, <1>20, <1>21, ReachCat DEF cbB, boxL, exp, n3
+    <1>23. QED
+        BY <1>22 DEF imB, imD, pairs, docL, mid, calls, cbB, cbD, boxL, exp, n3
+
 ===============================================================================
