@@ -3,6 +3,8 @@
    delivery is that fold at Post. *)
 EXTENDS Proj, SequenceTheorems
 
+LOCAL X == INSTANCE SequencesExtTheorems
+
 
 LEMMA CtorEq ==
     ASSUME NEW S, NEW h(_), NEW e(_),
@@ -495,5 +497,126 @@ PROOF
         BY Zenon DEF Upd, Post
     <1>8. QED
         BY <1>6, <1>7, Zenon DEF src
+
+LEMMA Ne ==
+    ASSUME NEW E, NEW n \in Nat, NEW seq \in Seq(E), Len(seq) = n + 1
+    PROVE  seq # << >>
+PROOF
+    BY EmptySeq, Z3
+
+LEMMA FrontLen ==
+    ASSUME NEW E, NEW n \in Nat, NEW seq \in Seq(E),
+           Len(seq) = n + 1, seq # << >>
+    PROVE  X!Front(seq) \in Seq(E) /\ Len(X!Front(seq)) = n
+PROOF
+    BY X!FrontProperties, Z3
+
+LEMMA AsAppend ==
+    ASSUME NEW E, NEW seq \in Seq(E), seq # << >>
+    PROVE  X!Last(seq) \in E /\ seq = Append(X!Front(seq), X!Last(seq))
+PROOF
+    BY X!LastProperties
+
+LEMMA StepR ==
+    ASSUME NEW E, NEW n \in Nat, NEW seq \in Seq(E), NEW R(_),
+           Len(seq) = n + 1,
+           \A s \in Seq(E) : Len(s) = n => R(s),
+           \A s \in Seq(E), e \in E : R(s) => R(Append(s, e))
+    PROVE  R(seq)
+PROOF
+    <1>1. seq # << >>
+        BY Ne
+    <1>2. X!Front(seq) \in Seq(E) /\ Len(X!Front(seq)) = n
+        BY <1>1, FrontLen
+    <1>3. X!Last(seq) \in E /\ seq = Append(X!Front(seq), X!Last(seq))
+        BY <1>1, AsAppend
+    <1>4. R(X!Front(seq))
+        BY <1>2
+    <1>5. R(Append(X!Front(seq), X!Last(seq)))
+        BY <1>2, <1>3, <1>4
+    <1>6. QED
+        BY <1>3, <1>5
+
+(* Distinct keys make delivery the posted set, in any send order. *)
+LEMMA DeliverPosted ==
+    ASSUME NEW b, NEW E, NEW ms \in Seq(E),
+           \A i, j \in 1 .. Len(ms) :
+              i /= j => MsgKey(ms[i]) /= MsgKey(ms[j])
+    PROVE  Deliver(b, ms) = Posted(b, Range(ms))
+PROOF
+    <1> DEFINE Ok(seq) ==
+            seq \in Seq(E) =>
+              ((\A i, j \in 1 .. Len(seq) :
+                   i /= j => MsgKey(seq[i]) /= MsgKey(seq[j]))
+                 => Deliver(b, seq) = Posted(b, Range(seq)))
+    <1>1. Ok(<< >>)
+        <2>1. << >> \in Seq(E) /\ Len(<< >>) = 0
+            BY EmptySeq
+        <2>2. Deliver(b, << >>) = b
+            BY DeliverNil
+        <2>3. DOMAIN << >> = {}
+            BY <2>1, LenProperties
+        <2>4. Range(<< >>) = {}
+            BY <2>3, Zenon DEF Range
+        <2>5. Posted(b, {}) = b
+            BY DEF Posted
+        <2>6. QED
+            BY <2>1, <2>2, <2>4, <2>5, Zenon DEF Ok
+    <1>2. ASSUME NEW s \in Seq(E), NEW e \in E, Ok(s)
+          PROVE  Ok(Append(s, e))
+        <2> DEFINE src == Append(s, e)
+        <2> DEFINE keys(seq) ==
+                \A i, j \in 1 .. Len(seq) :
+                   i /= j => MsgKey(seq[i]) /= MsgKey(seq[j])
+        <2>1. src \in Seq(E)
+            BY AppendProperties DEF src
+        <2>2. \A i \in 1 .. Len(s) : src[i] = s[i]
+            BY AppendProperties DEF src
+        <2>3. src[Len(s) + 1] = e
+            BY AppendProperties DEF src
+        <2>4. Range(src) = Range(s) \cup {e}
+            BY AppendProperties DEF src
+        <2>5. keys(src) => keys(s)
+            BY <2>2, Z3 DEF keys
+        <2>6. keys(src) => (\A m \in Range(s) : MsgKey(m) /= MsgKey(e))
+            BY <2>2, <2>3, Z3 DEF keys, Range
+        <2>7. keys(s) => Deliver(b, s) = Posted(b, Range(s))
+            BY <1>2 DEF Ok
+        <2>8. keys(src) => Deliver(b, s) = Posted(b, Range(s))
+            BY <2>5, <2>7, Zenon
+        <2>9. (\A m \in Range(s) : MsgKey(m) /= MsgKey(e)) =>
+                 Post(Posted(b, Range(s)), e) = Posted(b, Range(s) \cup {e})
+            BY PostedStep
+        <2>10. Deliver(b, src) = Post(Deliver(b, s), e)
+            BY DeliverAppend DEF src
+        <2>11. keys(src) => Deliver(b, src) = Posted(b, Range(src))
+            BY <2>4, <2>6, <2>8, <2>9, <2>10, Zenon
+        <2>12. QED
+            BY <2>1, <2>11 DEF Ok, src, keys
+    <1>3. \A s \in Seq(E), e \in E : Ok(s) => Ok(Append(s, e))
+        BY <1>2
+    <1> DEFINE L(k) ==
+            \A seq \in Seq(E) : Len(seq) = k => Ok(seq)
+    <1>4. \A seq \in Seq(E) : Len(seq) = 0 => seq = << >>
+        BY EmptySeq, Zenon
+    <1>5. L(0)
+        BY <1>1, <1>4, Zenon DEF L
+    <1>6. ASSUME NEW n \in Nat
+          PROVE  L(n) => L(n + 1)
+        <2> HIDE DEF Ok
+        <2>1. QED
+            BY <1>3, StepR DEF L
+    <1>7. \A n \in Nat : L(n) => L(n + 1)
+        BY <1>6
+    <1>8. \A n \in Nat : L(n)
+        BY <1>5, <1>7, NatInduction DEF L
+    <1>9. Len(ms) \in Nat
+        BY LenProperties
+    <1>10. L(Len(ms))
+        BY <1>8, <1>9, Zenon DEF L
+    <1>11. Ok(ms)
+        BY <1>10 DEF L
+    <1>12. QED
+        BY <1>11 DEF Ok
 
 =============================================================================
