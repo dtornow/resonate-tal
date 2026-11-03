@@ -4930,4 +4930,90 @@ PROOF
     <1>7. QED
         BY <1>4, <1>5, <1>6
 
+(* An id the timeout pass does not touch keeps its value. *)
+LEMMA StayImage ==
+    ASSUME NEW base, NEW T, NEW t, NEW k,
+           k \in DOMAIN base, T \subseteq DOMAIN base, k \notin T
+    PROVE  Image(base, T, t)[k] = base[k]
+PROOF
+    <1>1. Image(base, T, t)[k]
+            = IF k \in T THEN P!Project(base[k], t) ELSE base[k]
+        BY ImageVal
+    <1>2. QED
+        BY <1>1, Z3
+
+(* An id named by no listener pair keeps its value. *)
+LEMMA StayN ==
+    ASSUME NEW store, NEW P, NEW j, NEW non,
+           j \in DOMAIN store,
+           j \notin non,
+           P \subseteq [id : non, address : Address]
+    PROVE  ImgN(store, P)[j] = store[j]
+PROOF
+    <1>1. CASE P = {}
+        BY <1>1 DEF ImgN
+    <1>2. CASE P # {}
+        <2> DEFINE f == [k \in DOMAIN store |-> BodyN(store, P, k)]
+        <2>1. BodyN(store, P, j) = store[j]
+            BY IdleBody
+        <2>2. ImgN(store, P) = f
+            BY <1>2 DEF ImgN, f
+        <2>3. f[j] = BodyN(store, P, j)
+            BY Zenon DEF f
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* A callback set that never mentions an id leaves that object alone. *)
+LEMMA IdleC ==
+    ASSUME NEW o, NEW S, NEW j, NEW t,
+           \A y \in S : y.id /= j,
+           \A y \in S : y.awaiter /= j
+    PROVE  BodyC(o, S, j, t) = o[j]
+PROOF
+    <1> DEFINE drop == Drp(j, S)
+    <1> DEFINE src == Src(j, S)
+    <1>1. src = {}
+        BY SrcOut DEF src
+    <1>2. drop = {}
+        <2>1. drop = { p.awaiter : p \in { y \in S : y.id = j } }
+            BY DEF drop, Drp
+        <2>2. { y \in S : y.id = j } = {}
+            BY Zenon
+        <2>3. { p.awaiter : p \in {} } = {}
+            BY Zenon
+        <2>4. QED
+            BY <2>1, <2>2, <2>3, Zenon
+    <1>3. Cleared(o, S, j) = o[j]
+        BY <1>2 DEF Cleared, drop
+    <1>4. Woken(o[j], src, t) = o[j]
+        BY <1>1 DEF Woken, src
+    <1>5. BodyC(o, S, j, t) = Woken(Cleared(o, S, j), src, t)
+        BY DEF BodyC, src
+    <1>6. QED
+        BY <1>3, <1>4, <1>5
+
+LEMMA StayC ==
+    ASSUME NEW store, NEW S, NEW j, NEW t,
+           j \in DOMAIN store,
+           \A y \in S : y.id /= j,
+           \A y \in S : y.awaiter /= j
+    PROVE  ImgC(store, S, t)[j] = store[j]
+PROOF
+    <1>1. CASE S = {}
+        BY <1>1 DEF ImgC
+    <1>2. CASE S # {}
+        <2> DEFINE f == [k \in DOMAIN store |-> BodyC(store, S, k, t)]
+        <2>1. BodyC(store, S, j, t) = store[j]
+            BY IdleC
+        <2>2. ImgC(store, S, t) = f
+            BY <1>2 DEF ImgC, f
+        <2>3. f[j] = BodyC(store, S, j, t)
+            BY Zenon DEF f
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>3. QED
+        BY <1>1, <1>2
+
 ===============================================================================
