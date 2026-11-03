@@ -4122,4 +4122,165 @@ PROOF
         BY <1>32 DEF imB, imD, pairs, docL, mid, calls, cbB, cbD, boxL,
                      exp, n3, ldB, ldD, rset, nL
 
+(* The concrete sweep's lease document. Same passes as the outbox. *)
+ExpireDoc(doc, t) ==
+    SweepExpiresAt(
+        SweepCallbacks(
+            SweepListeners(SweepTimeoutAt(doc, t).doc, t).doc, t).doc, t).doc
+
+(* Under the shape guards, that document is already projected and its
+   pending tasks are due retries. The concrete retry ids are DueR. *)
+LEMMA ExpireDue ==
+    ASSUME NEW doc, NEW t,
+           t /= NoTime,
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  /\ \A k \in DOMAIN ExpireDoc(doc, t) :
+                 P!Project(ExpireDoc(doc, t)[k], t) = ExpireDoc(doc, t)[k]
+           /\ \A k \in DOMAIN ExpireDoc(doc, t) :
+                 ExpireDoc(doc, t)[k].task.state = "pending" =>
+                     /\ ExpireDoc(doc, t)[k].task.retryTimeoutAt /= NoTime
+                     /\ ExpireDoc(doc, t)[k].promise.state = "pending"
+           /\ { i \in DOMAIN ExpireDoc(doc, t) :
+                  ExpireDoc(doc, t)[i].task.state = "pending"
+                  /\ ExpireDoc(doc, t)[i].task.retryTimeoutAt <= t }
+                 = DueR(ExpireDoc(doc, t), t)
+PROOF
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1> DEFINE pairs == DueN(im, t)
+    <1> DEFINE ln == ImgN(im, pairs)
+    <1> DEFINE ldoc == SweepListeners(tdoc, t).doc
+    <1> DEFINE calls == DueC(ln, t)
+    <1> DEFINE cb == ImgC(ln, calls, t)
+    <1> DEFINE cdoc == SweepCallbacks(ldoc, t).doc
+    <1> DEFINE exp ==
+            { i \in DOMAIN cb :
+                cb[i].task.state = "acquired"
+                /\ cb[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE ld == ImgL(cb, exp, t)
+    <1> DEFINE edoc == SweepExpiresAt(cdoc, t).doc
+    <1>1. S \subseteq DOMAIN doc
+        BY DEF S
+    <1>2. S = { i \in DOMAIN doc :
+                  /\ doc[i].promise.state = "pending"
+                  /\ doc[i].promise.timeoutAt <= t }
+        BY DEF S
+    <1>3. tdoc = im
+        BY <1>2, TimeoutDoc DEF tdoc, im
+    <1>4. DOMAIN im = DOMAIN doc
+        BY <1>1, ImageDom DEF im
+    <1>5. \A k \in DOMAIN doc : P!Project(im[k], t) = im[k]
+        BY SliceFixed DEF S, im
+    <1>6. \A k \in DOMAIN im : P!Project(im[k], t) = im[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN im
+                     PROVE  P!Project(im[k], t) = im[k]
+            OBVIOUS
+        <2>1. k \in DOMAIN doc
+            BY <1>4
+        <2>2. QED
+            BY <1>5, <2>1
+    <1>7. \A k \in DOMAIN im : im[k].promise.callbacks \subseteq Id
+        BY <1>1, CallsOn DEF im
+    <1>8. SweepListeners(im, t).doc = ln
+        BY ListenAfter DEF S, im, pairs, ln
+    <1>9. ldoc = ln
+        BY <1>3, <1>8 DEF tdoc, ldoc
+    <1>10. SweepCallbacks(ImgN(im, pairs), t).doc
+             = ImgC(ImgN(im, pairs), DueC(ImgN(im, pairs), t), t)
+        BY <1>6, <1>7, CallAfter DEF im, pairs
+    <1>11. cdoc = cb
+        BY <1>9, <1>10 DEF ldoc, cdoc, ln, pairs, calls, cb
+    <1>12. \A k \in DOMAIN cb : P!Project(cb[k], t) = cb[k]
+        BY FixedPass DEF S, im, pairs, ln, calls, cb
+    <1>13. \A k \in DOMAIN cb :
+              cb[k].task.state = "pending" =>
+                  /\ cb[k].task.retryTimeoutAt /= NoTime
+                  /\ cb[k].promise.state = "pending"
+        BY <1>1, RetryPass DEF im, pairs, ln, calls, cb
+    <1>14. \A k \in DOMAIN cb :
+              cb[k].task.state = "acquired" =>
+                  /\ cb[k].task.leaseTimeoutAt /= NoTime
+                  /\ cb[k].promise.state = "pending"
+        BY <1>1, LeasePass DEF im, pairs, ln, calls, cb
+    <1>15. exp \subseteq DOMAIN cb
+        BY DEF exp
+    <1>16. ASSUME NEW k \in exp
+           PROVE  cb[k].promise.state = "pending"
+        <2>1. k \in DOMAIN cb /\ cb[k].task.state = "acquired"
+            BY ONLY <1>16, Zenon DEF exp
+        <2>2. QED
+            BY <1>14, <2>1, Zenon
+    <1>17. \A k \in exp : cb[k].promise.state = "pending"
+        BY <1>16
+    <1>18. SweepExpiresAt(cb, t).doc = ld
+        BY LeaseDoc DEF cb, exp, ld
+    <1>19. edoc = ld
+        BY <1>11, <1>18 DEF cdoc, edoc
+    <1>20. \A k \in DOMAIN ld : P!Project(ld[k], t) = ld[k]
+        BY <1>12, <1>15, FixedImgL DEF cb, exp, ld
+    <1>21. \A k \in DOMAIN ld :
+              ld[k].task.state = "pending" =>
+                  /\ ld[k].task.retryTimeoutAt /= NoTime
+                  /\ ld[k].promise.state = "pending"
+        BY <1>13, <1>15, <1>17, RetryImgL DEF cb, exp, ld
+    <1>22. { i \in DOMAIN ld :
+               ld[i].task.state = "pending"
+               /\ ld[i].task.retryTimeoutAt <= t }
+            = DueR(ld, t)
+        BY <1>20, <1>21, RetryShape
+    <1>23. \A k \in DOMAIN edoc : P!Project(edoc[k], t) = edoc[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN edoc
+                     PROVE  P!Project(edoc[k], t) = edoc[k]
+            OBVIOUS
+        <2>1. k \in DOMAIN ld /\ edoc[k] = ld[k]
+            BY <1>19
+        <2>2. QED
+            BY <1>20, <2>1
+    <1>24. \A k \in DOMAIN edoc :
+              edoc[k].task.state = "pending" =>
+                  /\ edoc[k].task.retryTimeoutAt /= NoTime
+                  /\ edoc[k].promise.state = "pending"
+        <2> SUFFICES ASSUME NEW k \in DOMAIN edoc
+                     PROVE  edoc[k].task.state = "pending" =>
+                                /\ edoc[k].task.retryTimeoutAt /= NoTime
+                                /\ edoc[k].promise.state = "pending"
+            OBVIOUS
+        <2>1. k \in DOMAIN ld /\ edoc[k] = ld[k]
+            BY <1>19
+        <2>2. QED
+            BY <1>21, <2>1, Zenon
+    <1>25. { i \in DOMAIN edoc :
+               edoc[i].task.state = "pending"
+               /\ edoc[i].task.retryTimeoutAt <= t }
+            = DueR(edoc, t)
+        <2>1. { i \in DOMAIN edoc :
+                  edoc[i].task.state = "pending"
+                  /\ edoc[i].task.retryTimeoutAt <= t }
+                = { i \in DOMAIN ld :
+                      ld[i].task.state = "pending"
+                      /\ ld[i].task.retryTimeoutAt <= t }
+            BY <1>19, Zenon
+        <2>2. DueR(edoc, t) = DueR(ld, t)
+            BY <1>19 DEF DueR
+        <2>3. QED
+            BY <1>22, <2>1, <2>2
+    <1>26. QED
+        BY <1>23, <1>24, <1>25 DEF edoc, cdoc, ldoc, tdoc, ExpireDoc
+
 ===============================================================================

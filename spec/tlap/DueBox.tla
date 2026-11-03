@@ -73,4 +73,52 @@ PROOF
     <1>7. QED
         BY <1>6 DEF tdoc, edoc, P, S, TDoc, EDoc, RetryIds
 
+(* The same delivery, with the concrete retry ids replaced by DueR. *)
+LEMMA SweepDueR ==
+    ASSUME NEW b, NEW doc, NEW t,
+           DOMAIN doc \subseteq Id,
+           t /= NoTime,
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  Deliver(b, Sweep(doc, t).sends)
+              = BoxAt(BoxN(b, TDoc(doc, t), DueN(TDoc(doc, t), t), t),
+                      EDoc(doc, t), DueR(EDoc(doc, t), t))
+PROOF
+    <1>1. Deliver(b, Sweep(doc, t).sends)
+            = BoxAt(BoxN(b, TDoc(doc, t), DueN(TDoc(doc, t), t), t),
+                    EDoc(doc, t), RetryIds(doc, t))
+        BY SweepDueBox
+    <1>2. { i \in DOMAIN ExpireDoc(doc, t) :
+              ExpireDoc(doc, t)[i].task.state = "pending"
+              /\ ExpireDoc(doc, t)[i].task.retryTimeoutAt <= t }
+            = DueR(ExpireDoc(doc, t), t)
+        BY ExpireDue
+    <1>3. EDoc(doc, t) = ExpireDoc(doc, t)
+        BY DEF EDoc, TDoc, ExpireDoc
+    <1>4. RetryIds(doc, t)
+            = { i \in DOMAIN EDoc(doc, t) :
+                  EDoc(doc, t)[i].task.state = "pending"
+                  /\ EDoc(doc, t)[i].task.retryTimeoutAt <= t }
+        BY DEF RetryIds
+    <1>5. RetryIds(doc, t) = DueR(EDoc(doc, t), t)
+        BY <1>2, <1>3, <1>4 DEF DueR
+    <1>6. BoxAt(BoxN(b, TDoc(doc, t), DueN(TDoc(doc, t), t), t),
+                EDoc(doc, t), RetryIds(doc, t))
+            = BoxAt(BoxN(b, TDoc(doc, t), DueN(TDoc(doc, t), t), t),
+                    EDoc(doc, t), DueR(EDoc(doc, t), t))
+        BY <1>5 DEF BoxAt, Msgs
+    <1>7. QED
+        BY <1>1, <1>6
+
 =============================================================================
