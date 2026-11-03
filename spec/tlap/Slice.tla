@@ -5016,4 +5016,106 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2
 
+(* An id of another origin is not touched by this origin's lease image.
+   The timeout set, the listener pairs, the callbacks, and the leases
+   all name ids of this origin. *)
+LEMMA OffLease ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW k,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           k \in DOMAIN base,
+           k.origin /= o,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+    PROVE  LET S ==
+                { i \in DOMAIN doc :
+                    doc[i].promise.state = "pending"
+                    /\ doc[i].promise.timeoutAt <= t }
+                imB == Image(base, S, t)
+                imD == Image(doc, S, t)
+                pairs == DueN(imD, t)
+                mid == ImgN(imB, pairs)
+                docL == ImgN(imD, pairs)
+                calls == DueC(docL, t)
+                cbB == ImgC(mid, calls, t)
+                cbD == ImgC(docL, calls, t)
+                exp ==
+                    { i \in DOMAIN cbD :
+                        cbD[i].task.state = "acquired"
+                        /\ cbD[i].task.leaseTimeoutAt <= t }
+            IN  ImgL(cbB, exp, t)[k] = base[k]
+PROOF
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE calls == DueC(docL, t)
+    <1> DEFINE cbB == ImgC(mid, calls, t)
+    <1> DEFINE cbD == ImgC(docL, calls, t)
+    <1> DEFINE exp ==
+            { i \in DOMAIN cbD :
+                cbD[i].task.state = "acquired"
+                /\ cbD[i].task.leaseTimeoutAt <= t }
+    <1>1. k \notin DOMAIN doc
+        BY Zenon
+    <1>2. S \subseteq DOMAIN doc /\ S \subseteq DOMAIN base
+        BY <1>1 DEF S
+    <1>3. k \notin S
+        BY <1>1, <1>2, Zenon
+    <1>4. imB[k] = base[k]
+        BY <1>2, <1>3, StayImage DEF imB
+    <1>5. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>2, ImageDom DEF imD, imB
+    <1>6. pairs \subseteq [id : DOMAIN imD, address : Address]
+        BY DueNIn DEF pairs
+    <1>7. pairs \subseteq [id : DOMAIN doc, address : Address]
+        BY <1>5, <1>6, Zenon
+    <1>8. k \in DOMAIN imB
+        BY <1>5, Zenon
+    <1>9. mid[k] = imB[k]
+        BY <1>1, <1>7, <1>8, StayN DEF mid, pairs
+    <1>10. mid[k] = base[k]
+        BY <1>4, <1>9
+    <1>11. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        BY DomImgN DEF docL, mid, imD, imB, pairs
+    <1>12. calls \subseteq [id : DOMAIN docL, awaiter : Id]
+        BY AwSub DEF calls
+    <1>13. calls \subseteq [id : DOMAIN doc, awaiter : Id]
+        BY <1>5, <1>11, <1>12, Zenon
+    <1>14. \A y \in calls : y.id /= k /\ y.awaiter /= k
+        <2> SUFFICES ASSUME NEW y \in calls
+                     PROVE  y.id /= k /\ y.awaiter /= k
+            OBVIOUS
+        <2>1. y \in [id : DOMAIN doc, awaiter : Id]
+            BY <1>13, Zenon
+        <2>2. y.id \in DOMAIN doc /\ y.awaiter \in Id
+            BY <2>1, Z3
+        <2>3. y.id /= k
+            BY <1>1, <2>2, Zenon
+        <2>4. y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+            BY <2>1, Zenon
+        <2>5. y.awaiter /= k
+            BY <1>1, <2>2, <2>4, Zenon
+        <2>6. QED
+            BY <2>3, <2>5
+    <1>15. k \in DOMAIN mid
+        BY <1>8, <1>11, Zenon
+    <1>16. cbB[k] = mid[k]
+        BY <1>14, <1>15, StayC DEF cbB, calls
+    <1>17. DOMAIN cbD = DOMAIN docL /\ DOMAIN cbB = DOMAIN mid
+        BY DomImgC DEF cbD, cbB, docL, mid, calls
+    <1>18. exp \subseteq DOMAIN cbD
+        BY DEF exp
+    <1>19. k \notin exp /\ exp \subseteq DOMAIN cbB /\ k \in DOMAIN cbB
+        BY <1>1, <1>5, <1>11, <1>15, <1>17, <1>18, Zenon
+    <1>20. ImgL(cbB, exp, t)[k] = cbB[k]
+        BY <1>19, LeaseAt DEF cbB, exp
+    <1>21. QED
+        BY <1>10, <1>16, <1>20 DEF S, imB, imD, pairs, mid, docL,
+                                calls, cbB, cbD, exp
+
 ===============================================================================
