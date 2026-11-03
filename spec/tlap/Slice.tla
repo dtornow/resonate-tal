@@ -4433,4 +4433,453 @@ PROOF
     <1>15. QED
         BY <1>13, <1>14 DEF ld, cb, exp, ln, im, pairs, calls, S
 
+(* A retry body depends only on the object it rewrites. *)
+LEMMA SameRetry ==
+    ASSUME NEW a, NEW b, NEW t, a = b
+    PROVE  RetryBody(a, t) = RetryBody(b, t)
+PROOF
+    BY Zenon
+
+(* Planting one origin's retry image is the retry image of the whole store.
+   Ids outside that origin are not in the retry set, so they stay. *)
+LEMMA PlantR ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW T,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           T \subseteq DOMAIN doc,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, ImgR(doc, T, t)) = ImgR(base, T, t)
+PROOF
+    <1>1. CASE T = {}
+        <2>1. ImgR(doc, T, t) = doc /\ ImgR(base, T, t) = base
+            BY <1>1 DEF ImgR
+        <2>2. Plant(base, o, doc) = base
+            BY PlantId
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>2. CASE T # {}
+        <2> DEFINE body ==
+                [ i \in DOMAIN doc |->
+                    IF i \in T THEN RetryBody(doc[i], t) ELSE doc[i] ]
+        <2> DEFINE full ==
+                [ i \in DOMAIN base |->
+                    IF i \in T THEN RetryBody(base[i], t) ELSE base[i] ]
+        <2>1. ImgR(doc, T, t) = body
+            BY <1>2 DEF ImgR, body
+        <2>2. ImgR(base, T, t) = full
+            BY <1>2 DEF ImgR, full
+        <2>3. DOMAIN body = DOMAIN doc
+            BY DomCtor DEF body
+        <2> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+        <2> DEFINE dom == kept \cup DOMAIN body
+        <2>4. \A i : i \in dom <=> i \in DOMAIN base
+            BY <2>3 DEF kept, dom
+        <2>5. dom = DOMAIN base
+            BY <2>4, SetExtensionality DEF dom
+        <2>6. \A i \in DOMAIN base :
+                (IF i \in DOMAIN body THEN body[i] ELSE base[i]) = full[i]
+            <3> SUFFICES ASSUME NEW k \in DOMAIN base
+                         PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                                  = full[k]
+                OBVIOUS
+            <3>1. full[k] = (IF k \in T THEN RetryBody(base[k], t) ELSE base[k])
+                BY Zenon DEF full
+            <3>2. CASE k \in DOMAIN doc
+                <4>1. k \in DOMAIN body
+                    BY <2>3, <3>2
+                <4>2. body[k] = (IF k \in T THEN RetryBody(doc[k], t) ELSE doc[k])
+                    BY <2>3, <3>2, Zenon DEF body
+                <4>3. base[k] = doc[k]
+                    BY <3>2, Zenon
+                <4>4. RetryBody(base[k], t) = RetryBody(doc[k], t)
+                    BY <4>3, SameRetry
+                <4>5. QED
+                    BY <3>1, <4>1, <4>2, <4>3, <4>4, Z3
+            <3>3. CASE k \notin DOMAIN doc
+                <4>1. k \notin DOMAIN body
+                    BY <2>3, <3>3
+                <4>2. k \notin T
+                    BY <3>3, Zenon
+                <4>3. full[k] = base[k]
+                    BY <3>1, <4>2, Z3
+                <4>4. QED
+                    BY <4>1, <4>3
+            <3>4. QED
+                BY <3>2, <3>3
+        <2>7. Plant(base, o, body)
+                = [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+            BY DEF Plant, kept, dom
+        <2>8. [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+                = full
+            BY <2>5, <2>6, ExtCtor DEF full
+        <2>9. QED
+            BY <2>1, <2>2, <2>7, <2>8
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* Every due listener pair names an id of the document. *)
+LEMMA DueNIn ==
+    ASSUME NEW o, NEW t
+    PROVE  DueN(o, t) \subseteq [id : DOMAIN o, address : Address]
+PROOF
+    <1>1. ASSUME NEW p \in DueN(o, t)
+          PROVE  p \in [id : DOMAIN o, address : Address]
+        <2> DEFINE ids ==
+                { q \in DOMAIN o :
+                    P!Project(o[q], t).promise.state /= "pending" }
+        <2>1. p \in [id : ids, address : Address]
+            BY <1>1, InDue DEF ids
+        <2>2. QED
+            BY <2>1, Z3 DEF ids
+    <1>2. QED
+        BY <1>1
+
+(* An Unblock reads only the projected state at its id. *)
+LEMMA SameUnblock ==
+    ASSUME NEW base, NEW doc, NEW i, NEW addr, NEW t,
+           i \in DOMAIN base, i \in DOMAIN doc,
+           base[i] = doc[i]
+    PROVE  UnblockMsg(base, i, addr, t) = UnblockMsg(doc, i, addr, t)
+PROOF
+    <1>1. P!Project(base[i], t) = P!Project(doc[i], t)
+        BY Zenon
+    <1>2. P!Project(base[i], t).promise.state
+            = P!Project(doc[i], t).promise.state
+        BY <1>1, Zenon
+    <1>3. QED
+        BY <1>2, Isa DEF UnblockMsg
+
+(* Listener messages agree when the two stores agree on every pair id. *)
+LEMMA SameMsgN ==
+    ASSUME NEW base, NEW doc, NEW P, NEW t,
+           P \subseteq [id : DOMAIN doc, address : Address],
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  MsgN(base, P, t) = MsgN(doc, P, t)
+PROOF
+    <1>1. \A p \in P :
+             UnblockMsg(base, p.id, p.address, t)
+               = UnblockMsg(doc, p.id, p.address, t)
+        <2> SUFFICES ASSUME NEW p \in P
+                     PROVE  UnblockMsg(base, p.id, p.address, t)
+                              = UnblockMsg(doc, p.id, p.address, t)
+            OBVIOUS
+        <2>1. p.id \in DOMAIN doc /\ p.address \in Address
+            BY Z3
+        <2>2. p.id \in DOMAIN base /\ base[p.id] = doc[p.id]
+            BY <2>1, Zenon
+        <2>3. QED
+            BY <2>1, <2>2, SameUnblock
+    <1>2. \A m : m \in MsgN(base, P, t) <=> m \in MsgN(doc, P, t)
+        BY <1>1, Zenon DEF MsgN
+    <1>3. QED
+        BY <1>2, IsaWithSetExtensionality
+
+LEMMA SameBoxN ==
+    ASSUME NEW b, NEW base, NEW doc, NEW P, NEW t,
+           P \subseteq [id : DOMAIN doc, address : Address],
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  BoxN(b, base, P, t) = BoxN(b, doc, P, t)
+PROOF
+    <1>1. MsgN(base, P, t) = MsgN(doc, P, t)
+        BY SameMsgN
+    <1>2. QED
+        BY <1>1 DEF BoxN
+
+(* An Execute reads only the target and the version at its id. *)
+LEMMA SameExec ==
+    ASSUME NEW base, NEW doc, NEW i,
+           i \in DOMAIN base, i \in DOMAIN doc,
+           base[i] = doc[i]
+    PROVE  RetryMsg(base, i) = RetryMsg(doc, i)
+PROOF
+    BY Isa DEF RetryMsg
+
+LEMMA SameMsgs ==
+    ASSUME NEW base, NEW doc, NEW T,
+           T \subseteq DOMAIN doc,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  Msgs(base, T) = Msgs(doc, T)
+PROOF
+    <1>1. \A i \in T : RetryMsg(base, i) = RetryMsg(doc, i)
+        <2> SUFFICES ASSUME NEW i \in T
+                     PROVE  RetryMsg(base, i) = RetryMsg(doc, i)
+            OBVIOUS
+        <2>1. i \in DOMAIN doc
+            BY Zenon
+        <2>2. i \in DOMAIN base /\ base[i] = doc[i]
+            BY <2>1, Zenon
+        <2>3. QED
+            BY <2>1, <2>2, SameExec
+    <1>2. \A m : m \in Msgs(base, T) <=> m \in Msgs(doc, T)
+        BY <1>1, Zenon DEF Msgs
+    <1>3. QED
+        BY <1>2, IsaWithSetExtensionality
+
+LEMMA SameBoxAt ==
+    ASSUME NEW b, NEW base, NEW doc, NEW T,
+           T \subseteq DOMAIN doc,
+           DOMAIN doc \subseteq DOMAIN base,
+           \A k \in DOMAIN doc : base[k] = doc[k]
+    PROVE  BoxAt(b, base, T) = BoxAt(b, doc, T)
+PROOF
+    <1>1. Msgs(base, T) = Msgs(doc, T)
+        BY SameMsgs
+    <1>2. QED
+        BY <1>1 DEF BoxAt
+
+(* The callback image of an eta store is eta. *)
+LEMMA EtaImgC ==
+    ASSUME NEW base, NEW S, NEW t,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  ImgC(base, S, t)
+              = [ i \in DOMAIN ImgC(base, S, t) |-> ImgC(base, S, t)[i] ]
+PROOF
+    <1>1. CASE S = {}
+        <2>1. ImgC(base, S, t) = base
+            BY <1>1 DEF ImgC
+        <2>2. DOMAIN ImgC(base, S, t) = DOMAIN base
+            BY <2>1
+        <2>3. QED
+            BY <2>1, <2>2, Zenon
+    <1>2. CASE S # {}
+        <2> DEFINE f == [ j \in DOMAIN base |-> BodyC(base, S, j, t) ]
+        <2>1. ImgC(base, S, t) = f
+            BY <1>2 DEF ImgC, f
+        <2>2. DOMAIN f = DOMAIN base
+            BY DomCtor DEF f
+        <2>3. \A k \in DOMAIN base : f[k] = BodyC(base, S, k, t)
+            BY Zenon DEF f
+        <2>4. f = [ i \in DOMAIN f |-> f[i] ]
+            BY <2>2, <2>3, ExtCtor DEF f
+        <2>5. QED
+            BY <2>1, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* The lease image of an eta store is eta. *)
+LEMMA EtaImgL ==
+    ASSUME NEW base, NEW T, NEW t,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  ImgL(base, T, t)
+              = [ i \in DOMAIN ImgL(base, T, t) |-> ImgL(base, T, t)[i] ]
+PROOF
+    <1>1. CASE T = {}
+        <2>1. ImgL(base, T, t) = base
+            BY <1>1 DEF ImgL
+        <2>2. DOMAIN ImgL(base, T, t) = DOMAIN base
+            BY <2>1
+        <2>3. QED
+            BY <2>1, <2>2, Zenon
+    <1>2. CASE T # {}
+        <2> DEFINE f ==
+                [ i \in DOMAIN base |->
+                    IF i \in T THEN LeaseBody(base[i], t) ELSE base[i] ]
+        <2>1. ImgL(base, T, t) = f
+            BY <1>2 DEF ImgL, f
+        <2>2. DOMAIN f = DOMAIN base
+            BY DomCtor DEF f
+        <2>3. \A k \in DOMAIN base :
+                f[k] = (IF k \in T THEN LeaseBody(base[k], t) ELSE base[k])
+            BY Zenon DEF f
+        <2>4. f = [ i \in DOMAIN f |-> f[i] ]
+            BY <2>2, <2>3, ExtCtor DEF f
+        <2>5. QED
+            BY <2>1, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* The retry image of an eta store is eta. *)
+LEMMA EtaImgR ==
+    ASSUME NEW base, NEW T, NEW t,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  ImgR(base, T, t)
+              = [ i \in DOMAIN ImgR(base, T, t) |-> ImgR(base, T, t)[i] ]
+PROOF
+    <1>1. CASE T = {}
+        <2>1. ImgR(base, T, t) = base
+            BY <1>1 DEF ImgR
+        <2>2. DOMAIN ImgR(base, T, t) = DOMAIN base
+            BY <2>1
+        <2>3. QED
+            BY <2>1, <2>2, Zenon
+    <1>2. CASE T # {}
+        <2> DEFINE f ==
+                [ i \in DOMAIN base |->
+                    IF i \in T THEN RetryBody(base[i], t) ELSE base[i] ]
+        <2>1. ImgR(base, T, t) = f
+            BY <1>2 DEF ImgR, f
+        <2>2. DOMAIN f = DOMAIN base
+            BY DomCtor DEF f
+        <2>3. \A k \in DOMAIN base :
+                f[k] = (IF k \in T THEN RetryBody(base[k], t) ELSE base[k])
+            BY Zenon DEF f
+        <2>4. f = [ i \in DOMAIN f |-> f[i] ]
+            BY <2>2, <2>3, ExtCtor DEF f
+        <2>5. QED
+            BY <2>1, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+(* Five due sets, one per sweep kind, still fit in MaxSweep.
+   Timeouts, leases, and retries are ids. Listeners add an address.
+   Callbacks add another id. *)
+LEMMA SweepBudget ==
+    ASSUME NEW a, NEW b, NEW c, NEW d, NEW e,
+           a \subseteq Id,
+           d \subseteq Id,
+           e \subseteq Id,
+           b \subseteq [id : Id, address : Address],
+           c \subseteq [id : Id, awaiter : Id]
+    PROVE  Cardinality(a) + Cardinality(b) + Cardinality(c)
+              + Cardinality(d) + Cardinality(e) \in 0 .. P!MaxSweep
+PROOF
+    <1> DEFINE OpA(p) == [id |-> p[1], address |-> p[2]]
+    <1> DEFINE ImgA == { OpA(p) : p \in Id \X Address }
+    <1> DEFINE OpI(p) == [id |-> p[1], awaiter |-> p[2]]
+    <1> DEFINE ImgI == { OpI(p) : p \in Id \X Id }
+    <1>1. IsFiniteSet(Id) /\ IsFiniteSet(Address)
+        BY FiniteOrigin, FiniteRest, FiniteAddress, IdFinite
+    <1>2. Cardinality(Id) \in Nat /\ Cardinality(Address) \in Nat
+        BY <1>1, FS_CardinalityType
+    <1>3. P!MaxSweep
+            = Cardinality(Id)
+              * (Cardinality(Id) + Cardinality(Address) + 3)
+        BY SameId, SameCard DEF P!MaxSweep
+    <1>4. P!MaxSweep \in Nat
+        BY SweepCap
+    <1>5. /\ IsFiniteSet(Id \X Address)
+          /\ Cardinality(Id \X Address)
+               = Cardinality(Id) * Cardinality(Address)
+        BY <1>1, FS_Product
+    <1>6. /\ IsFiniteSet(Id \X Id)
+          /\ Cardinality(Id \X Id) = Cardinality(Id) * Cardinality(Id)
+        BY <1>1, FS_Product
+    <1>7. LET T == { OpA(x) : x \in Id \X Address }
+          IN  /\ IsFiniteSet(T)
+              /\ Cardinality(T) <= Cardinality(Id \X Address)
+        <2> DEFINE f == [x \in Id \X Address |-> OpA(x)]
+        <2> DEFINE img == { OpA(x) : x \in Id \X Address }
+        <2>1. IsFiniteSet(Id \X Address)
+            BY <1>5, Zenon
+        <2>2. f \in Surjection(Id \X Address, img)
+            BY DEF Surjection, f, img
+        <2>3. IsFiniteSet(img)
+            BY <2>1, <2>2, FS_Surjection, Zenon
+        <2>4. Cardinality(img) <= Cardinality(Id \X Address)
+            BY <2>1, <2>2, FS_Surjection, Zenon
+        <2>5. QED
+            BY <2>3, <2>4 DEF img
+    <1>8. /\ IsFiniteSet(ImgA)
+          /\ Cardinality(ImgA) <= Cardinality(Id \X Address)
+        BY <1>7 DEF ImgA
+    <1>9. LET T == { OpI(x) : x \in Id \X Id }
+          IN  /\ IsFiniteSet(T)
+              /\ Cardinality(T) <= Cardinality(Id \X Id)
+        <2> DEFINE f == [x \in Id \X Id |-> OpI(x)]
+        <2> DEFINE img == { OpI(x) : x \in Id \X Id }
+        <2>1. IsFiniteSet(Id \X Id)
+            BY <1>6, Zenon
+        <2>2. f \in Surjection(Id \X Id, img)
+            BY DEF Surjection, f, img
+        <2>3. IsFiniteSet(img)
+            BY <2>1, <2>2, FS_Surjection, Zenon
+        <2>4. Cardinality(img) <= Cardinality(Id \X Id)
+            BY <2>1, <2>2, FS_Surjection, Zenon
+        <2>5. QED
+            BY <2>3, <2>4 DEF img
+    <1>10. /\ IsFiniteSet(ImgI)
+           /\ Cardinality(ImgI) <= Cardinality(Id \X Id)
+        BY <1>9 DEF ImgI
+    <1>11. [id : Id, address : Address] \subseteq ImgA
+        <2> SUFFICES ASSUME NEW x \in [id : Id, address : Address]
+                     PROVE  x \in ImgA
+            OBVIOUS
+        <2>1. x.id \in Id /\ x.address \in Address
+            BY Z3
+        <2> DEFINE p == <<x.id, x.address>>
+        <2>2. p \in Id \X Address
+            BY <2>1, PairIn DEF p
+        <2>3. x = [id |-> x.id, address |-> x.address]
+            BY RecPair
+        <2>4. x = OpA(p)
+            BY <2>3 DEF OpA, p
+        <2>5. QED
+            BY <2>2, <2>4 DEF ImgA
+    <1>12. [id : Id, awaiter : Id] \subseteq ImgI
+        <2> SUFFICES ASSUME NEW x \in [id : Id, awaiter : Id]
+                     PROVE  x \in ImgI
+            OBVIOUS
+        <2>1. x.id \in Id /\ x.awaiter \in Id
+            BY Z3
+        <2> DEFINE p == <<x.id, x.awaiter>>
+        <2>2. p \in Id \X Id
+            BY <2>1, PairIn DEF p
+        <2>3. x = [id |-> x.id, awaiter |-> x.awaiter]
+            BY RecAw
+        <2>4. x = OpI(p)
+            BY <2>3 DEF OpI, p
+        <2>5. QED
+            BY <2>2, <2>4 DEF ImgI
+    <1>13. b \subseteq ImgA /\ c \subseteq ImgI
+        BY <1>11, <1>12, Zenon
+    <1>14. /\ IsFiniteSet(a) /\ Cardinality(a) <= Cardinality(Id)
+           /\ IsFiniteSet(d) /\ Cardinality(d) <= Cardinality(Id)
+           /\ IsFiniteSet(e) /\ Cardinality(e) <= Cardinality(Id)
+        BY <1>1, FS_Subset
+    <1>15. /\ IsFiniteSet(b) /\ Cardinality(b) <= Cardinality(ImgA)
+           /\ IsFiniteSet(c) /\ Cardinality(c) <= Cardinality(ImgI)
+        BY <1>8, <1>10, <1>13, FS_Subset
+    <1>16. /\ Cardinality(a) \in Nat
+           /\ Cardinality(b) \in Nat
+           /\ Cardinality(c) \in Nat
+           /\ Cardinality(d) \in Nat
+           /\ Cardinality(e) \in Nat
+        BY <1>14, <1>15, FS_CardinalityType
+    <1>17. Cardinality(b) <= Cardinality(Id) * Cardinality(Address)
+        <2>1. Cardinality(b) <= Cardinality(ImgA)
+            BY <1>15, Zenon
+        <2>2. Cardinality(ImgA) <= Cardinality(Id \X Address)
+            BY <1>8, Zenon
+        <2>3. Cardinality(Id \X Address)
+                = Cardinality(Id) * Cardinality(Address)
+            BY <1>5, Zenon
+        <2>4. Cardinality(b) \in Nat
+            BY <1>16, Zenon
+        <2>5. Cardinality(ImgA) \in Nat
+            BY <1>8, FS_CardinalityType, Zenon
+        <2>6. Cardinality(Id \X Address) \in Nat
+            BY <1>5, FS_CardinalityType, Zenon
+        <2>7. Cardinality(b) <= Cardinality(Id \X Address)
+            BY <2>1, <2>2, <2>4, <2>5, <2>6, Z3
+        <2>8. QED
+            BY <2>3, <2>7, Z3
+    <1>18. Cardinality(c) <= Cardinality(Id) * Cardinality(Id)
+        <2>1. Cardinality(c) <= Cardinality(ImgI)
+            BY <1>15, Zenon
+        <2>2. Cardinality(ImgI) <= Cardinality(Id \X Id)
+            BY <1>10, Zenon
+        <2>3. Cardinality(Id \X Id) = Cardinality(Id) * Cardinality(Id)
+            BY <1>6, Zenon
+        <2>4. Cardinality(c) \in Nat
+            BY <1>16, Zenon
+        <2>5. Cardinality(ImgI) \in Nat
+            BY <1>10, FS_CardinalityType, Zenon
+        <2>6. Cardinality(Id \X Id) \in Nat
+            BY <1>6, FS_CardinalityType, Zenon
+        <2>7. Cardinality(c) <= Cardinality(Id \X Id)
+            BY <2>1, <2>2, <2>4, <2>5, <2>6, Z3
+        <2>8. QED
+            BY <2>3, <2>7, Z3
+    <1>19. Cardinality(a) + Cardinality(b) + Cardinality(c)
+             + Cardinality(d) + Cardinality(e) <= P!MaxSweep
+        BY <1>2, <1>3, <1>14, <1>16, <1>17, <1>18, Z3
+    <1>20. Cardinality(a) + Cardinality(b) + Cardinality(c)
+             + Cardinality(d) + Cardinality(e) \in Nat
+        BY <1>16, Z3
+    <1>21. QED
+        BY <1>4, <1>19, <1>20, Z3
+
 ===============================================================================
