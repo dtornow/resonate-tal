@@ -296,6 +296,69 @@ PROOF
     <1>9. QED
         BY <1>7, <1>8
 
+(* SetToSeq lays the due ids out. Delivery of that list is the abstract retry post. *)
+LEMMA RetryPosted ==
+    ASSUME NEW doc, NEW t, NEW b, NEW S,
+           IsFiniteSet(S),
+           S = { i \in DOMAIN doc :
+                   doc[i].task.state = "pending"
+                   /\ doc[i].task.retryTimeoutAt <= t }
+    PROVE  Deliver(b, SweepRetryAt(doc, t).sends) = BoxAt(b, doc, S)
+PROOF
+    <1> DEFINE q == SetToSeq(S)
+    <1>1. /\ q \in Seq(S)
+          /\ IsInjective(q)
+          /\ Range(q) = S
+        BY SetToSeqAny DEF q
+    <1>2. S \subseteq DOMAIN doc
+        BY Zenon
+    <1>3. QED
+        BY <1>1, <1>2, RetrySend DEF q
+
+(* A listener pair names a promise that is no longer pending, so projection
+   leaves the record alone and the Unblock carries that state. *)
+LEMMA ListenMatch ==
+    ASSUME NEW doc, NEW t, NEW P,
+           P = { x \in [id : { i \in DOMAIN doc :
+                                 doc[i].promise.state /= "pending" },
+                        address : Address] :
+                   x.address \in doc[x.id].promise.listeners }
+    PROVE  \A p \in P :
+              UnblockMsg(doc, p.id, p.address, t).message.state
+                = doc[p.id].promise.state
+PROOF
+    <1>1. ASSUME NEW p \in P
+          PROVE  UnblockMsg(doc, p.id, p.address, t).message.state
+                    = doc[p.id].promise.state
+        <2> DEFINE obj == doc[p.id]
+        <2>1. obj.promise.state /= "pending"
+            BY <1>1 DEF obj
+        <2>2. QED
+            BY <2>1, ProjectId DEF UnblockMsg, obj
+    <1>2. QED
+        BY <1>1
+
+LEMMA ListenPosted ==
+    ASSUME NEW doc, NEW t, NEW b, NEW P,
+           IsFiniteSet(P),
+           P = { x \in [id : { i \in DOMAIN doc :
+                                 doc[i].promise.state /= "pending" },
+                        address : Address] :
+                   x.address \in doc[x.id].promise.listeners }
+    PROVE  Deliver(b, SweepListeners(doc, t).sends) = BoxN(b, doc, P, t)
+PROOF
+    <1> DEFINE q == SetToSeq(P)
+    <1>1. /\ q \in Seq(P)
+          /\ IsInjective(q)
+          /\ Range(q) = P
+        BY SetToSeqAny DEF q
+    <1>2. \A p \in P :
+             UnblockMsg(doc, p.id, p.address, t).message.state
+               = doc[p.id].promise.state
+        BY ListenMatch
+    <1>3. QED
+        BY <1>1, <1>2, ListenSend DEF q
+
 LEMMA SweepPosted ==
     ASSUME NEW b, NEW doc, NEW t,
            NEW P, NEW S, NEW heard, NEW retried,
