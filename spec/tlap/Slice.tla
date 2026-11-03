@@ -4356,4 +4356,81 @@ PROOF
     <1>14. QED
         BY <1>8, <1>10, <1>12, <1>13 DEF edoc
 
+(* The lease document is the abstract image of the timeout, listener,
+   callback, and lease passes. *)
+LEMMA ExpireIs ==
+    ASSUME NEW doc, NEW t,
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id
+    PROVE  LET S ==
+                { i \in DOMAIN doc :
+                    doc[i].promise.state = "pending"
+                    /\ doc[i].promise.timeoutAt <= t }
+               im == Image(doc, S, t)
+               ln == ImgN(im, DueN(im, t))
+               cb == ImgC(ln, DueC(ln, t), t)
+               exp ==
+                { i \in DOMAIN cb :
+                    cb[i].task.state = "acquired"
+                    /\ cb[i].task.leaseTimeoutAt <= t }
+           IN  ExpireDoc(doc, t) = ImgL(cb, exp, t)
+PROOF
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE im == Image(doc, S, t)
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1> DEFINE pairs == DueN(im, t)
+    <1> DEFINE ln == ImgN(im, pairs)
+    <1> DEFINE ldoc == SweepListeners(tdoc, t).doc
+    <1> DEFINE calls == DueC(ln, t)
+    <1> DEFINE cb == ImgC(ln, calls, t)
+    <1> DEFINE cdoc == SweepCallbacks(ldoc, t).doc
+    <1> DEFINE exp ==
+            { i \in DOMAIN cb :
+                cb[i].task.state = "acquired"
+                /\ cb[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE ld == ImgL(cb, exp, t)
+    <1> DEFINE edoc == SweepExpiresAt(cdoc, t).doc
+    <1>1. S \subseteq DOMAIN doc
+        BY DEF S
+    <1>2. S = { i \in DOMAIN doc :
+                  /\ doc[i].promise.state = "pending"
+                  /\ doc[i].promise.timeoutAt <= t }
+        BY DEF S
+    <1>3. tdoc = im
+        BY <1>2, TimeoutDoc DEF tdoc, im
+    <1>4. DOMAIN im = DOMAIN doc
+        BY <1>1, ImageDom DEF im
+    <1>5. \A k \in DOMAIN doc : P!Project(im[k], t) = im[k]
+        BY SliceFixed DEF S, im
+    <1>6. \A k \in DOMAIN im : P!Project(im[k], t) = im[k]
+        <2> SUFFICES ASSUME NEW k \in DOMAIN im
+                     PROVE  P!Project(im[k], t) = im[k]
+            OBVIOUS
+        <2>1. k \in DOMAIN doc
+            BY <1>4
+        <2>2. QED
+            BY <1>5, <2>1
+    <1>7. \A k \in DOMAIN im : im[k].promise.callbacks \subseteq Id
+        BY <1>1, CallsOn DEF im
+    <1>8. SweepListeners(im, t).doc = ln
+        BY ListenAfter DEF S, im, pairs, ln
+    <1>9. ldoc = ln
+        BY <1>3, <1>8 DEF tdoc, ldoc
+    <1>10. SweepCallbacks(ImgN(im, pairs), t).doc
+             = ImgC(ImgN(im, pairs), DueC(ImgN(im, pairs), t), t)
+        BY <1>6, <1>7, CallAfter DEF im, pairs
+    <1>11. cdoc = cb
+        BY <1>9, <1>10 DEF ldoc, cdoc, ln, pairs, calls, cb
+    <1>12. SweepExpiresAt(cb, t).doc = ld
+        BY LeaseDoc DEF cb, exp, ld
+    <1>13. edoc = ld
+        BY <1>11, <1>12 DEF cdoc, edoc
+    <1>14. ExpireDoc(doc, t) = edoc
+        BY DEF ExpireDoc, edoc, cdoc, ldoc, tdoc
+    <1>15. QED
+        BY <1>13, <1>14 DEF ld, cb, exp, ln, im, pairs, calls, S
+
 ===============================================================================
