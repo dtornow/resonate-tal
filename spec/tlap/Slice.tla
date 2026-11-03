@@ -4283,4 +4283,77 @@ PROOF
     <1>26. QED
         BY <1>23, <1>24, <1>25 DEF edoc, cdoc, ldoc, tdoc, ExpireDoc
 
+(* The sweep's document is the retry pass of the lease document, and that
+   pass is the abstract retry image at DueR. *)
+LEMMA SweepRetryImg ==
+    ASSUME NEW doc, NEW t,
+           t /= NoTime,
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  Sweep(doc, t).doc
+              = ImgR(ExpireDoc(doc, t), DueR(ExpireDoc(doc, t), t), t)
+PROOF
+    <1> DEFINE tmo == SweepTimeoutAt(doc, t)
+    <1> DEFINE lis == SweepListeners(tmo.doc, t)
+    <1> DEFINE cb == SweepCallbacks(lis.doc, t)
+    <1> DEFINE ex == SweepExpiresAt(cb.doc, t)
+    <1> DEFINE ry == SweepRetryAt(ex.doc, t)
+    <1> DEFINE a1 == SweepTimeoutAt(doc, t)
+    <1> DEFINE a2 == Merge(a1, SweepListeners(a1.doc, t))
+    <1> DEFINE a3 == Merge(a2, SweepCallbacks(a2.doc, t))
+    <1> DEFINE a4 == Merge(a3, SweepExpiresAt(a3.doc, t))
+    <1> DEFINE a5 == Merge(a4, SweepRetryAt(a4.doc, t))
+    <1> DEFINE edoc == ExpireDoc(doc, t)
+    <1> DEFINE due ==
+            { i \in DOMAIN edoc :
+                edoc[i].task.state = "pending"
+                /\ edoc[i].task.retryTimeoutAt <= t }
+    <1>1. Sweep(doc, t) = a5
+        <2>1. Sweep(doc, t)
+                 = LET s1 == SweepTimeoutAt(doc, t)
+                       u2 == Merge(s1, SweepListeners(s1.doc, t))
+                       u3 == Merge(u2, SweepCallbacks(u2.doc, t))
+                       u4 == Merge(u3, SweepExpiresAt(u3.doc, t))
+                   IN  Merge(u4, SweepRetryAt(u4.doc, t))
+            BY DEF Sweep
+        <2>2. QED
+            BY <2>1, Isa DEF a1, a2, a3, a4, a5
+    <1>2. a1 = tmo
+        BY DEF a1, tmo
+    <1>3. a2.doc = lis.doc
+        BY <1>2 DEF a2, lis, Merge
+    <1>4. a3.doc = cb.doc
+        BY <1>3 DEF a3, cb, Merge
+    <1>5. a4.doc = ex.doc
+        BY <1>4 DEF a4, ex, Merge
+    <1>6. SweepRetryAt(a4.doc, t) = ry
+        BY <1>5 DEF ry
+    <1>7. a5.doc = ry.doc
+        BY <1>6 DEF a5, Merge
+    <1>8. Sweep(doc, t).doc = ry.doc
+        BY <1>1, <1>7
+    <1>9. ex.doc = edoc
+        BY DEF ex, cb, lis, tmo, edoc, ExpireDoc
+    <1>10. ry.doc = SweepRetryAt(edoc, t).doc
+        BY <1>9 DEF ry
+    <1>11. due = DueR(edoc, t)
+        BY ExpireDue DEF due, edoc
+    <1>12. SweepRetryAt(edoc, t).doc = ImgR(edoc, due, t)
+        BY RetryDoc DEF due
+    <1>13. ImgR(edoc, due, t) = ImgR(edoc, DueR(edoc, t), t)
+        BY <1>11 DEF ImgR
+    <1>14. QED
+        BY <1>8, <1>10, <1>12, <1>13 DEF edoc
+
 ===============================================================================
