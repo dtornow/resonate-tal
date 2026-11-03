@@ -1,6 +1,7 @@
 ----------------------------- MODULE SweepPost -----------------------------
 (* Listener sends and retry sends are sequences. Distinct keys let delivery
-   post the union, which is what a sweep writes into the outbox. *)
+   post the union. Delivery of the concatenation is the listener box, then
+   the retry box. *)
 EXTENDS SendSet, PassTag
 
 (* A retry id is an element of the document, so a document whose domain
@@ -359,6 +360,125 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2, ListenSend DEF q
 
+(* The outbox fold is a left fold, so a concatenated send list is the
+   second list applied to the box the first list produced. *)
+LEMMA DeliverSplit ==
+    ASSUME NEW b, NEW E,
+           NEW s1 \in Seq(E), NEW s2 \in Seq(E)
+    PROVE  Deliver(b, s1 \o s2) = Deliver(Deliver(b, s1), s2)
+PROOF
+    <1> DEFINE Ok(seq) ==
+            seq \in Seq(E) =>
+              Deliver(b, s1 \o seq) = Deliver(Deliver(b, s1), seq)
+    <1>1. Ok(<< >>)
+        <2>1. << >> \in Seq(E)
+            BY EmptySeq
+        <2>2. s1 \o << >> = s1
+            BY ConcatEmptySeq
+        <2>3. Deliver(Deliver(b, s1), << >>) = Deliver(b, s1)
+            BY DeliverNil
+        <2>4. QED
+            BY <2>1, <2>2, <2>3, Zenon DEF Ok
+    <1>2. ASSUME NEW s \in Seq(E), NEW e \in E, Ok(s)
+          PROVE  Ok(Append(s, e))
+        <2> DEFINE src == Append(s, e)
+        <2> DEFINE cat == s1 \o s
+        <2> DEFINE left == Append(cat, e)
+        <2> DEFINE right == s1 \o src
+        <2>1. /\ src \in Seq(E)
+              /\ Len(src) = Len(s) + 1
+              /\ \A i \in 1 .. Len(s) : src[i] = s[i]
+              /\ src[Len(s) + 1] = e
+            BY AppendProperties DEF src
+        <2>2. /\ cat \in Seq(E)
+              /\ Len(cat) = Len(s1) + Len(s)
+              /\ \A i \in 1 .. (Len(s1) + Len(s)) :
+                    cat[i] = IF i <= Len(s1) THEN s1[i]
+                             ELSE s[i - Len(s1)]
+            BY ConcatProperties DEF cat
+        <2>3. /\ left \in Seq(E)
+              /\ Len(left) = Len(cat) + 1
+              /\ \A i \in 1 .. Len(cat) : left[i] = cat[i]
+              /\ left[Len(cat) + 1] = e
+            BY <2>2, AppendProperties DEF left
+        <2>4. /\ right \in Seq(E)
+              /\ Len(right) = Len(s1) + Len(src)
+              /\ \A i \in 1 .. (Len(s1) + Len(src)) :
+                    right[i] = IF i <= Len(s1) THEN s1[i]
+                               ELSE src[i - Len(s1)]
+            BY <2>1, ConcatProperties DEF right
+        <2>5. Len(s1) \in Nat /\ Len(s) \in Nat
+            BY LenProperties
+        <2>6. /\ Len(left) = Len(s1) + Len(s) + 1
+              /\ Len(right) = Len(s1) + Len(s) + 1
+            BY <2>1, <2>2, <2>3, <2>4, <2>5, Z3
+        <2>7. Len(left) = Len(right)
+            BY <2>6
+        <2>8. \A i \in 1 .. Len(left) : left[i] = right[i]
+            <3>1. ASSUME NEW i \in 1 .. Len(left)
+                  PROVE  left[i] = right[i]
+                <4> DEFINE n1 == Len(s1)
+                <4> DEFINE n2 == Len(s)
+                <4>1. i \in 1 .. (n1 + n2 + 1)
+                    BY <2>6, <3>1 DEF n1, n2
+                <4>2. CASE i <= n1
+                    BY <2>2, <2>3, <2>4, <2>6, <4>1, <4>2, Z3 DEF n1, n2
+                <4>3. CASE i > n1 /\ i <= n1 + n2
+                    <5>1. i - n1 \in 1 .. n2
+                        BY <2>5, <4>1, <4>3, Z3 DEF n1, n2
+                    <5>2. QED
+                        BY <2>1, <2>2, <2>3, <2>4, <2>6, <4>3, <5>1, Z3
+                           DEF n1, n2
+                <4>4. CASE i = n1 + n2 + 1
+                    BY <2>1, <2>2, <2>3, <2>4, <2>6, <4>4, Z3 DEF n1, n2
+                <4>5. QED
+                    BY <2>5, <4>1, <4>2, <4>3, <4>4, Z3 DEF n1, n2
+            <3>2. QED
+                BY <3>1
+        <2>9. left = right
+            BY <2>3, <2>4, <2>7, <2>8, SeqEqual
+        <2>10. Deliver(b, left) = Post(Deliver(b, cat), e)
+            BY <2>2, DeliverAppend DEF left
+        <2>11. Deliver(Deliver(b, s1), src)
+                  = Post(Deliver(Deliver(b, s1), s), e)
+            BY DeliverAppend DEF src
+        <2>12. Deliver(b, s1 \o s) = Deliver(Deliver(b, s1), s)
+            BY <1>2 DEF Ok
+        <2>12a. Deliver(b, cat) = Deliver(Deliver(b, s1), s)
+            BY <2>12 DEF cat
+        <2>13. Post(Deliver(b, cat), e)
+                  = Post(Deliver(Deliver(b, s1), s), e)
+            BY <2>12a
+        <2>14. Deliver(b, right) = Deliver(Deliver(b, s1), src)
+            BY <2>9, <2>10, <2>11, <2>13
+        <2>15. QED
+            BY <2>1, <2>14 DEF Ok, src, right
+    <1>3. \A s \in Seq(E), e \in E : Ok(s) => Ok(Append(s, e))
+        BY <1>2
+    <1> DEFINE L(k) ==
+            \A seq \in Seq(E) : Len(seq) = k => Ok(seq)
+    <1>4. \A seq \in Seq(E) : Len(seq) = 0 => seq = << >>
+        BY EmptySeq, Zenon
+    <1>5. L(0)
+        BY <1>1, <1>4, Zenon DEF L
+    <1>6. ASSUME NEW n \in Nat
+          PROVE  L(n) => L(n + 1)
+        <2> HIDE DEF Ok
+        <2>1. QED
+            BY <1>3, StepR DEF L
+    <1>7. \A n \in Nat : L(n) => L(n + 1)
+        BY <1>6
+    <1>8. \A n \in Nat : L(n)
+        BY <1>5, <1>7, NatInduction DEF L
+    <1>9. Len(s2) \in Nat
+        BY LenProperties
+    <1>10. L(Len(s2))
+        BY <1>8, <1>9, Zenon DEF L
+    <1>11. Ok(s2)
+        BY <1>10 DEF L
+    <1>12. QED
+        BY <1>11 DEF Ok
+
 LEMMA SweepPosted ==
     ASSUME NEW b, NEW doc, NEW t,
            NEW P, NEW S, NEW heard, NEW retried,
@@ -456,5 +576,115 @@ PROOF
         BY <1>8, <1>19
     <1>21. QED
         BY <1>4, <1>8, <1>12, <1>14, <1>16, <1>18, <1>20, SweepDeliver
+
+(* Listeners post first and retries post onto that box, which is what
+   delivering the concatenated sweep sends does. *)
+LEMMA SweepBox ==
+    ASSUME NEW b, NEW doc, NEW t,
+           NEW P, NEW S,
+           IsFiniteSet(P),
+           IsFiniteSet(S),
+           P = { x \in [id : { i \in DOMAIN SweepTimeoutAt(doc, t).doc :
+                                 SweepTimeoutAt(doc, t).doc[i].promise.state
+                                   /= "pending" },
+                        address : Address] :
+                   x.address
+                     \in SweepTimeoutAt(doc, t).doc[x.id].promise.listeners },
+           S = { i \in DOMAIN SweepExpiresAt(
+                            SweepCallbacks(
+                                SweepListeners(
+                                    SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                            t).doc :
+                   /\ SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc[i].task.state = "pending"
+                   /\ SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc[i].task.retryTimeoutAt <= t }
+    PROVE  Deliver(b, Sweep(doc, t).sends)
+              = BoxAt(BoxN(b, SweepTimeoutAt(doc, t).doc, P, t),
+                      SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc,
+                      S)
+PROOF
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1> DEFINE edoc ==
+            SweepExpiresAt(
+                SweepCallbacks(SweepListeners(tdoc, t).doc, t).doc, t).doc
+    <1> DEFINE lis == SweepListeners(tdoc, t).sends
+    <1> DEFINE ry == SweepRetryAt(edoc, t).sends
+    <1>1. P = { x \in [id : { i \in DOMAIN tdoc :
+                                tdoc[i].promise.state /= "pending" },
+                       address : Address] :
+                  x.address \in tdoc[x.id].promise.listeners }
+        BY DEF tdoc
+    <1>2. S = { i \in DOMAIN edoc :
+                  edoc[i].task.state = "pending"
+                  /\ edoc[i].task.retryTimeoutAt <= t }
+        BY DEF tdoc, edoc
+    <1>3. \E E : SweepListeners(tdoc, t).sends \in Seq(E)
+        BY <1>1, ListenSomeSeq
+    <1>4. lis = SweepListeners(tdoc, t).sends
+        BY DEF tdoc, lis
+    <1>5. \E E : lis \in Seq(E)
+        BY <1>3, <1>4
+    <1>6. PICK E1 : lis \in Seq(E1)
+        BY <1>5
+    <1>7. \E E : SweepRetryAt(edoc, t).sends \in Seq(E)
+        BY <1>2, RetrySomeSeq
+    <1>8. ry = SweepRetryAt(edoc, t).sends
+        BY DEF edoc, ry
+    <1>9. \E E : ry \in Seq(E)
+        BY <1>7, <1>8
+    <1>10. PICK E2 : ry \in Seq(E2)
+        BY <1>9
+    <1> DEFINE Both == E1 \cup E2
+    <1>11. E1 \subseteq Both /\ E2 \subseteq Both
+        BY DEF Both
+    <1>12. lis \in Seq(Both) /\ ry \in Seq(Both)
+        BY <1>6, <1>10, <1>11, SeqMonotonic
+    <1>13. lis = SweepListeners(SweepTimeoutAt(doc, t).doc, t).sends
+        BY DEF tdoc, lis
+    <1>14. ry = SweepRetryAt(SweepExpiresAt(
+                    SweepCallbacks(
+                        SweepListeners(
+                            SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                    t).doc, t).sends
+        BY DEF tdoc, edoc, ry
+    <1>15. Sweep(doc, t).sends = lis \o ry
+        BY <1>12, <1>13, <1>14, SweepSends
+    <1>16. Deliver(b, lis \o ry) = Deliver(Deliver(b, lis), ry)
+        BY <1>12, DeliverSplit
+    <1>17. Deliver(b, SweepListeners(tdoc, t).sends) = BoxN(b, tdoc, P, t)
+        BY <1>1, ListenPosted
+    <1>18. Deliver(b, lis) = BoxN(b, tdoc, P, t)
+        BY <1>4, <1>17
+    <1>19. Deliver(BoxN(b, tdoc, P, t), SweepRetryAt(edoc, t).sends)
+              = BoxAt(BoxN(b, tdoc, P, t), edoc, S)
+        BY <1>2, RetryPosted
+    <1>20. Deliver(BoxN(b, tdoc, P, t), ry)
+              = BoxAt(BoxN(b, tdoc, P, t), edoc, S)
+        BY <1>8, <1>19
+    <1>21. Deliver(b, lis \o ry)
+              = BoxAt(BoxN(b, tdoc, P, t), edoc, S)
+        BY <1>16, <1>18, <1>20
+    <1>22. BoxAt(BoxN(b, tdoc, P, t), edoc, S)
+              = BoxAt(BoxN(b, SweepTimeoutAt(doc, t).doc, P, t),
+                      SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc,
+                      S)
+        BY DEF tdoc, edoc
+    <1>23. QED
+        BY <1>15, <1>21, <1>22
 
 =============================================================================
