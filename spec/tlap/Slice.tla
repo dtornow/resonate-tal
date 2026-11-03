@@ -4882,4 +4882,52 @@ PROOF
     <1>21. QED
         BY <1>4, <1>19, <1>20, Z3
 
+(* Two stores that agree off one origin plant the same document. *)
+LEMMA SamePlant ==
+    ASSUME NEW a, NEW b, NEW o, NEW body,
+           DOMAIN a = DOMAIN b,
+           DOMAIN body = { i \in DOMAIN a : i.origin = o },
+           \A i \in DOMAIN a : i.origin /= o => a[i] = b[i]
+    PROVE  Plant(a, o, body) = Plant(b, o, body)
+PROOF
+    <1> DEFINE keptA == { j \in DOMAIN a : j.origin /= o }
+    <1> DEFINE keptB == { j \in DOMAIN b : j.origin /= o }
+    <1> DEFINE domA == keptA \cup DOMAIN body
+    <1> DEFINE domB == keptB \cup DOMAIN body
+    <1>1. keptA = keptB
+        BY Zenon DEF keptA, keptB
+    <1>2. domA = domB
+        BY <1>1 DEF domA, domB
+    <1>3. \A i \in domA :
+            (IF i \in DOMAIN body THEN body[i] ELSE a[i])
+              = (IF i \in DOMAIN body THEN body[i] ELSE b[i])
+        <2> SUFFICES ASSUME NEW k \in domA
+                     PROVE  (IF k \in DOMAIN body THEN body[k] ELSE a[k])
+                              = (IF k \in DOMAIN body THEN body[k] ELSE b[k])
+            OBVIOUS
+        <2>1. CASE k \in DOMAIN body
+            BY <2>1
+        <2>2. CASE k \notin DOMAIN body
+            <3>1. k \in keptA
+                BY <2>2 DEF domA
+            <3>2. k.origin /= o /\ k \in DOMAIN a
+                BY <3>1 DEF keptA
+            <3>3. a[k] = b[k]
+                BY <3>2
+            <3>4. QED
+                BY <2>2, <3>3
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>4. Plant(a, o, body)
+            = [ i \in domA |-> IF i \in DOMAIN body THEN body[i] ELSE a[i] ]
+        BY DEF Plant, keptA, domA
+    <1>5. Plant(b, o, body)
+            = [ i \in domB |-> IF i \in DOMAIN body THEN body[i] ELSE b[i] ]
+        BY DEF Plant, keptB, domB
+    <1>6. [ i \in domA |-> IF i \in DOMAIN body THEN body[i] ELSE a[i] ]
+            = [ i \in domB |-> IF i \in DOMAIN body THEN body[i] ELSE b[i] ]
+        BY <1>2, <1>3, ExtCtor
+    <1>7. QED
+        BY <1>4, <1>5, <1>6
+
 ===============================================================================
