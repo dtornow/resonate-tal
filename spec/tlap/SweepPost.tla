@@ -132,6 +132,170 @@ PROOF
     <1>5. QED
         BY <1>3, <1>4
 
+(* Each later pass rewrites records in place. The retry set is read from
+   the document those passes leave, so its domain is the one we started with. *)
+LEMMA ListenDom ==
+    ASSUME NEW doc, NEW t
+    PROVE  DOMAIN SweepListeners(doc, t).doc = DOMAIN doc
+PROOF
+    <1> DEFINE due ==
+            { x \in [id : { i \in DOMAIN doc :
+                               doc[i].promise.state /= "pending" },
+                     address : Address] :
+                 x.address \in doc[x.id].promise.listeners }
+    <1> DEFINE sw == SweepListeners(doc, t).doc
+    <1>1. CASE due = {}
+        <2>1. sw = doc
+            BY <1>1 DEF due, sw, SweepListeners
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE due # {}
+        <2>1. sw = [ i \in DOMAIN doc |->
+                       IF doc[i].promise.state /= "pending"
+                          /\ doc[i].promise.listeners /= {} THEN
+                            DropListeners(doc[i])
+                       ELSE
+                            doc[i] ]
+            BY <1>2 DEF due, sw, SweepListeners
+        <2>2. DOMAIN [ i \in DOMAIN doc |->
+                         IF doc[i].promise.state /= "pending"
+                            /\ doc[i].promise.listeners /= {} THEN
+                              DropListeners(doc[i])
+                         ELSE
+                              doc[i] ]
+                = DOMAIN doc
+            BY DomCtor
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA CallDom ==
+    ASSUME NEW doc, NEW t
+    PROVE  DOMAIN SweepCallbacks(doc, t).doc = DOMAIN doc
+PROOF
+    <1> DEFINE due ==
+            { x \in [id : { i \in DOMAIN doc :
+                               doc[i].promise.state /= "pending" },
+                     awaiter : Id] :
+                 x.awaiter \in doc[x.id].promise.callbacks }
+    <1> DEFINE resumes(w) == { x.id : x \in { y \in due : y.awaiter = w } }
+    <1> DEFINE woken == { x.awaiter : x \in due } \cap DOMAIN doc
+    <1> DEFINE sw == SweepCallbacks(doc, t).doc
+    <1> DEFINE body(i) ==
+            LET struck == IF doc[i].promise.state /= "pending"
+                             /\ doc[i].promise.callbacks /= {} THEN
+                              DropCallbacks(doc[i])
+                          ELSE
+                              doc[i]
+            IN  IF i \notin woken \/ struck.task.state \in {"none", "fulfilled"} THEN
+                    struck
+                ELSE IF struck.task.state = "suspended" THEN
+                    Wake(struck, resumes(i), t)
+                ELSE
+                    AddResumes(struck, resumes(i))
+    <1>1. CASE due = {}
+        <2>1. sw = doc
+            BY <1>1 DEF due, sw, SweepCallbacks
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE due # {}
+        <2>1. sw = [ i \in DOMAIN doc |-> body(i) ]
+            BY <1>2 DEF due, resumes, woken, sw, body, SweepCallbacks
+        <2>2. DOMAIN [ i \in DOMAIN doc |-> body(i) ] = DOMAIN doc
+            BY DomCtor
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA ExpireDom ==
+    ASSUME NEW doc, NEW t
+    PROVE  DOMAIN SweepExpiresAt(doc, t).doc = DOMAIN doc
+PROOF
+    <1> DEFINE due ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "acquired"
+                /\ doc[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE sw == SweepExpiresAt(doc, t).doc
+    <1>1. CASE due = {}
+        <2>1. sw = doc
+            BY <1>1 DEF due, sw, SweepExpiresAt
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE due # {}
+        <2>1. sw = [ i \in DOMAIN doc |->
+                       IF i \in due THEN
+                           [ doc[i] EXCEPT !.task.state          = "pending",
+                                           !.task.pid            = NoPid,
+                                           !.task.ttl            = NoTime,
+                                           !.task.leaseTimeoutAt = NoTime,
+                                           !.task.retryTimeoutAt = t ]
+                       ELSE
+                           doc[i] ]
+            BY <1>2 DEF due, sw, SweepExpiresAt
+        <2>2. DOMAIN [ i \in DOMAIN doc |->
+                         IF i \in due THEN
+                             [ doc[i] EXCEPT !.task.state          = "pending",
+                                             !.task.pid            = NoPid,
+                                             !.task.ttl            = NoTime,
+                                             !.task.leaseTimeoutAt = NoTime,
+                                             !.task.retryTimeoutAt = t ]
+                         ELSE
+                             doc[i] ]
+                = DOMAIN doc
+            BY DomCtor
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA RetryDueFinite ==
+    ASSUME NEW doc, NEW t, NEW S, DOMAIN doc \subseteq Id,
+           S = { i \in DOMAIN SweepExpiresAt(
+                            SweepCallbacks(
+                                SweepListeners(
+                                    SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                            t).doc :
+                   /\ SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc[i].task.state = "pending"
+                   /\ SweepExpiresAt(
+                          SweepCallbacks(
+                              SweepListeners(
+                                  SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                          t).doc[i].task.retryTimeoutAt <= t }
+    PROVE  IsFiniteSet(S)
+PROOF
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1> DEFINE ldoc == SweepListeners(tdoc, t).doc
+    <1> DEFINE cdoc == SweepCallbacks(ldoc, t).doc
+    <1> DEFINE edoc == SweepExpiresAt(cdoc, t).doc
+    <1>1. DOMAIN tdoc = DOMAIN doc
+        BY TimeoutDom DEF tdoc
+    <1>2. DOMAIN ldoc = DOMAIN tdoc
+        BY ListenDom DEF ldoc
+    <1>3. DOMAIN cdoc = DOMAIN ldoc
+        BY CallDom DEF cdoc
+    <1>4. DOMAIN edoc = DOMAIN cdoc
+        BY ExpireDom DEF edoc
+    <1>5. DOMAIN edoc = DOMAIN doc
+        BY <1>1, <1>2, <1>3, <1>4
+    <1>6. DOMAIN edoc \subseteq Id
+        BY <1>5
+    <1>7. IsFiniteSet({ i \in DOMAIN edoc :
+                          edoc[i].task.state = "pending"
+                          /\ edoc[i].task.retryTimeoutAt <= t })
+        BY <1>6, RetryFinite
+    <1>8. S = { i \in DOMAIN edoc :
+                  edoc[i].task.state = "pending"
+                  /\ edoc[i].task.retryTimeoutAt <= t }
+        BY DEF tdoc, ldoc, cdoc, edoc
+    <1>9. QED
+        BY <1>7, <1>8
+
 LEMMA SweepPosted ==
     ASSUME NEW b, NEW doc, NEW t,
            NEW P, NEW S, NEW heard, NEW retried,
