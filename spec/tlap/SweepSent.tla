@@ -424,4 +424,112 @@ PROOF
         BY <1>23, <1>26 DEF S, imB, imD, pairs, mid, docL, calls, cbB, cbD,
                              exp, ldB, ldD, rset, n
 
+(* At the live store and outbox, that sweep is inside the abstract closure. *)
+LEMMA SweepIn ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending",
+           base = Objects,
+           box = outbox
+    PROVE  Store(Plant(base, o, Sweep(doc, t).doc),
+                 Deliver(box, Sweep(doc, t).sends)) \in P!Swept(t)
+PROOF
+    <1>1. LET S ==
+                { i \in DOMAIN doc :
+                    doc[i].promise.state = "pending"
+                    /\ doc[i].promise.timeoutAt <= t }
+                imB == Image(base, S, t)
+                imD == Image(doc, S, t)
+                pairs == DueN(imD, t)
+                mid == ImgN(imB, pairs)
+                docL == ImgN(imD, pairs)
+                calls == DueC(docL, t)
+                cbB == ImgC(mid, calls, t)
+                cbD == ImgC(docL, calls, t)
+                exp ==
+                    { i \in DOMAIN cbD :
+                        cbD[i].task.state = "acquired"
+                        /\ cbD[i].task.leaseTimeoutAt <= t }
+                ldB == ImgL(cbB, exp, t)
+                ldD == ImgL(cbD, exp, t)
+                rset ==
+                    { j \in DOMAIN ldD :
+                        ldD[j].task.state = "pending"
+                        /\ ldD[j].task.retryTimeoutAt <= t }
+                n == Cardinality(S) + Cardinality(pairs)
+                       + Cardinality(calls) + Cardinality(exp)
+                       + Cardinality(rset)
+          IN  /\ ReachN(base, box, t,
+                        Plant(base, o, Sweep(doc, t).doc),
+                        Deliver(box, Sweep(doc, t).sends),
+                        n)
+              /\ n \in 0 .. P!MaxSweep
+        BY SweepSent
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE calls == DueC(docL, t)
+    <1> DEFINE cbB == ImgC(mid, calls, t)
+    <1> DEFINE cbD == ImgC(docL, calls, t)
+    <1> DEFINE exp ==
+            { i \in DOMAIN cbD :
+                cbD[i].task.state = "acquired"
+                /\ cbD[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE ldB == ImgL(cbB, exp, t)
+    <1> DEFINE ldD == ImgL(cbD, exp, t)
+    <1> DEFINE rset ==
+            { j \in DOMAIN ldD :
+                ldD[j].task.state = "pending"
+                /\ ldD[j].task.retryTimeoutAt <= t }
+    <1> DEFINE n ==
+            Cardinality(S) + Cardinality(pairs) + Cardinality(calls)
+              + Cardinality(exp) + Cardinality(rset)
+    <1> DEFINE os == Plant(base, o, Sweep(doc, t).doc)
+    <1> DEFINE b == Deliver(box, Sweep(doc, t).sends)
+    <1>2. /\ ReachN(base, box, t, os, b, n)
+          /\ n \in 0 .. P!MaxSweep
+        BY <1>1 DEF S, imB, imD, pairs, mid, docL, calls, cbB, cbD,
+                     exp, ldB, ldD, rset, n, os, b
+    <1>3. Store(os, b) \in F(base, box, t, P!MaxSweep)[P!MaxSweep]
+        <2>1. ASSUME NEW oo, NEW bb, NEW nn,
+                     oo = os, bb = b, nn = n,
+                     nn \in 0 .. P!MaxSweep,
+                     ReachN(base, box, t, oo, bb, nn)
+              PROVE  Store(oo, bb) \in F(base, box, t, P!MaxSweep)[P!MaxSweep]
+            BY <2>1, ReachIn
+        <2>2. QED
+            BY <1>2, <2>1, Zenon
+    <1>4. P!Swept(t) = F(Objects, outbox, t, P!MaxSweep)[P!MaxSweep]
+        BY SweptIs
+    <1>5. F(base, box, t, P!MaxSweep)[P!MaxSweep] = P!Swept(t)
+        BY <1>4, Zenon
+    <1>6. Store(os, b) \in P!Swept(t)
+        BY <1>3, <1>5, Zenon
+    <1>7. QED
+        BY <1>6 DEF os, b
+
 =============================================================================
