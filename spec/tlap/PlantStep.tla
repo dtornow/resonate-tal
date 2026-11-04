@@ -297,4 +297,58 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2 DEF c, a
 
+(* A create on the origin document, planted into the store, is the store the
+   abstract create returns. An id that is already there leaves the document. *)
+LEMMA CreateLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandlePromiseCreate(req, doc, t)
+                a == P!HandlePromiseCreate(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandlePromiseCreate(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseCreate(base, req, t)
+    <1> DEFINE id == req.id
+    <1>1. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandlePromiseCreate, P!HandlePromiseCreate
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. New(req, t) = P!New(req, t)
+            BY Isa DEF New, P!New, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE born == New(req, t)
+        <2>3. c.doc = Write(doc, id, born)
+            BY <1>2, Isa DEF c, born, id, HandlePromiseCreate, Skip
+        <2>4. a = {P!Write(base, id, born)}
+            BY <2>1, <2>2, Isa DEF a, born, id, P!HandlePromiseCreate, P!New
+        <2>5. Plant(base, o, Write(doc, id, born)) = Write(base, id, born)
+            <3>1. ASSUME NEW ii, NEW nw,
+                         ii = id, nw = born, ii.origin = o
+                  PROVE  Plant(base, o, Write(doc, ii, nw)) = Write(base, ii, nw)
+                BY <3>1, PlantWrite
+            <3>2. QED
+                BY <2>1, <3>1, Zenon DEF id
+        <2>6. Write(base, id, born) = P!Write(base, id, born)
+            <3>1. ASSUME NEW ii, NEW nw,
+                         ii = id, nw = born
+                  PROVE  Write(base, ii, nw) = P!Write(base, ii, nw)
+                BY <3>1 DEF Write, P!Write
+            <3>2. QED
+                BY <3>1, Zenon DEF id
+        <2>7. a = {Plant(base, o, c.doc)}
+            BY <2>3, <2>4, <2>5, <2>6
+        <2>8. QED
+            BY <2>7
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
 =============================================================================
