@@ -1336,4 +1336,197 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2 DEF c, a
 
+(* Planting the origin's own slice changes nothing. *)
+LEMMA PlantSame ==
+    ASSUME NEW base, NEW o, NEW doc,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, doc) = base
+PROOF
+    <1> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+    <1> DEFINE dom == kept \cup DOMAIN doc
+    <1>1. \A i : i \in dom <=> i \in DOMAIN base
+        BY DEF kept, dom
+    <1>2. dom = DOMAIN base
+        BY <1>1, SetExtensionality DEF dom
+    <1>3. \A i \in DOMAIN base :
+            (IF i \in DOMAIN doc THEN doc[i] ELSE base[i]) = base[i]
+        BY Z3
+    <1>4. Plant(base, o, doc)
+            = [ i \in dom |-> IF i \in DOMAIN doc THEN doc[i] ELSE base[i] ]
+        BY DEF Plant, kept, dom
+    <1>5. [ i \in dom |-> IF i \in DOMAIN doc THEN doc[i] ELSE base[i] ]
+            = [ i \in DOMAIN base |-> base[i] ]
+        BY <1>2, <1>3, ExtCtor
+    <1>6. QED
+        BY <1>4, <1>5
+
+(* A heartbeat of this origin, planted into the store, is one store the
+   abstract heartbeat returns. Other origins may be in that result too.
+   An empty beat on this origin leaves the document. *)
+LEMMA HeartbeatLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           o \in Origin,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskHeartbeat(req, doc, t)
+                a == P!HandleTaskHeartbeat(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE Plant(base, o, c.doc) \in a
+PROOF
+    <1> DEFINE c == HandleTaskHeartbeat(req, doc, t)
+    <1> DEFINE a == P!HandleTaskHeartbeat(base, req, t)
+    <1> DEFINE beat ==
+            { i \in DOMAIN doc :
+                LET old == Project(doc[i], t)
+                IN  /\ \E rf \in req.tasks :
+                          rf.id = i /\ rf.version = old.task.version
+                    /\ old.task.state = "acquired"
+                    /\ old.task.pid = req.pid
+                    /\ old.promise.state = "pending" }
+    <1> DEFINE beatA ==
+            { i \in DOMAIN base :
+                LET old == P!Project(base[i], t)
+                IN  /\ \E rf \in req.tasks :
+                          rf.id = i /\ rf.version = old.task.version
+                    /\ old.task.state = "acquired"
+                    /\ old.task.pid = req.pid
+                    /\ old.promise.state = "pending" }
+    <1> DEFINE upd(i) ==
+            LET old == Project(doc[i], t)
+            IN  [old EXCEPT !.task.leaseTimeoutAt = t + old.task.ttl]
+    <1> DEFINE updA(i) ==
+            LET old == P!Project(base[i], t)
+            IN  [old EXCEPT !.task.leaseTimeoutAt = t + old.task.ttl]
+    <1> DEFINE fn ==
+            [ i \in DOMAIN doc |-> IF i \in beat THEN upd(i) ELSE doc[i] ]
+    <1> DEFINE ata(keep) ==
+            [ i \in DOMAIN base |-> IF i \in keep THEN updA(i) ELSE base[i] ]
+    <1>1. \A i \in DOMAIN doc : i \in DOMAIN base /\ base[i] = doc[i] /\ i.origin = o
+        BY Zenon
+    <1>2. \A i \in DOMAIN doc : Project(doc[i], t) = P!Project(base[i], t)
+        <2> SUFFICES ASSUME NEW i \in DOMAIN doc
+                     PROVE  Project(doc[i], t) = P!Project(base[i], t)
+            OBVIOUS
+        <2>1. i \in DOMAIN base /\ base[i] = doc[i]
+            BY <1>1
+        <2>2. QED
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+    <1>3. \A i \in DOMAIN doc : upd(i) = updA(i)
+        <2> SUFFICES ASSUME NEW i \in DOMAIN doc
+                     PROVE  upd(i) = updA(i)
+            OBVIOUS
+        <2>1. Project(doc[i], t) = P!Project(base[i], t)
+            BY <1>2
+        <2>2. QED
+            BY <2>1, Isa DEF upd, updA
+    <1>4. beat = { i \in beatA : i.origin = o }
+        <2>1. \A i : i \in beat <=> i \in { j \in beatA : j.origin = o }
+            <3> SUFFICES ASSUME NEW i
+                         PROVE  i \in beat <=> i \in { j \in beatA : j.origin = o }
+                OBVIOUS
+            <3>1. CASE i \notin DOMAIN doc
+                <4>1. i \notin beat
+                    BY <3>1 DEF beat
+                <4>2. i \notin { j \in beatA : j.origin = o }
+                    BY <3>1 DEF beatA
+                <4>3. QED
+                    BY <4>1, <4>2
+            <3>2. CASE i \in DOMAIN doc
+                <4>1. i \in DOMAIN base /\ base[i] = doc[i] /\ i.origin = o
+                    BY <1>1, <3>2
+                <4>2. Project(doc[i], t) = P!Project(base[i], t)
+                    BY <1>2, <3>2
+                <4>3. QED
+                    BY <4>1, <4>2, Zenon DEF beat, beatA
+            <3>3. QED
+                BY <3>1, <3>2
+        <2>2. QED
+            BY <2>1, SetExtensionality
+    <1>5. CASE beatA = {}
+        <2>1. beat = {}
+            BY <1>4, <1>5
+        <2>2. c = Skip(doc)
+            BY <2>1 DEF c, beat, HandleTaskHeartbeat
+        <2>3. a = {}
+            BY <1>5 DEF a, beatA, P!HandleTaskHeartbeat
+        <2>4. QED
+            BY <2>2, <2>3 DEF Skip
+    <1>6. CASE beatA # {}
+        <2>1. a = {ata(beatA)}
+                  \cup { ata({ j \in beatA : j.origin = p }) : p \in Origin }
+            BY <1>6 DEF a, beatA, updA, ata, P!HandleTaskHeartbeat
+        <2>2. ata({ j \in beatA : j.origin = o })
+                \in { ata({ j \in beatA : j.origin = p }) : p \in Origin }
+            BY Zenon
+        <2>3. ata(beat) \in a
+            BY <1>4, <2>1, <2>2
+        <2>4. CASE beat = {}
+            <3>1. c = Skip(doc)
+                BY <2>4 DEF c, beat, HandleTaskHeartbeat
+            <3>2. Plant(base, o, doc) = base
+                BY PlantSame
+            <3>3. \A i \in DOMAIN base : (IF i \in {} THEN updA(i) ELSE base[i]) = base[i]
+                OBVIOUS
+            <3>4. ata({}) = [ i \in DOMAIN base |-> base[i] ]
+                BY <3>3, ExtCtor DEF ata
+            <3>5. ata({}) = base
+                BY <3>4
+            <3>6. Plant(base, o, c.doc) = ata(beat)
+                BY <2>4, <3>1, <3>2, <3>5 DEF Skip
+            <3>7. QED
+                BY <2>1, <2>3, <3>6
+        <2>5. CASE beat # {}
+            <3>1. c.doc = fn
+                BY <2>5 DEF c, beat, upd, fn, HandleTaskHeartbeat
+            <3>2. DOMAIN fn = DOMAIN doc
+                BY DomCtor DEF fn
+            <3>3. DOMAIN fn = { i \in DOMAIN base : i.origin = o }
+                BY <3>2
+            <3> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+            <3> DEFINE dom == kept \cup DOMAIN fn
+            <3>4. \A i : i \in dom <=> i \in DOMAIN base
+                BY <3>3 DEF kept, dom
+            <3>5. dom = DOMAIN base
+                BY <3>4, SetExtensionality DEF dom
+            <3>6. \A i \in DOMAIN base :
+                    (IF i \in DOMAIN fn THEN fn[i] ELSE base[i])
+                      = (IF i \in beat THEN updA(i) ELSE base[i])
+                <4> SUFFICES ASSUME NEW i \in DOMAIN base
+                             PROVE  (IF i \in DOMAIN fn THEN fn[i] ELSE base[i])
+                                      = (IF i \in beat THEN updA(i) ELSE base[i])
+                    OBVIOUS
+                <4>1. CASE i \in DOMAIN fn
+                    <5>1. i \in DOMAIN doc /\ base[i] = doc[i] /\ upd(i) = updA(i)
+                        BY <1>1, <1>3, <3>2, <4>1
+                    <5>2. fn[i] = (IF i \in beat THEN upd(i) ELSE doc[i])
+                        BY <4>1 DEF fn
+                    <5>3. QED
+                        BY <4>1, <5>1, <5>2
+                <4>2. CASE i \notin DOMAIN fn
+                    <5>1. i \notin beat
+                        BY <3>2, <4>2 DEF beat
+                    <5>2. QED
+                        BY <4>2, <5>1
+                <4>3. QED
+                    BY <4>1, <4>2
+            <3>7. Plant(base, o, fn)
+                    = [ i \in dom |-> IF i \in DOMAIN fn THEN fn[i] ELSE base[i] ]
+                BY <3>5 DEF Plant, kept, dom
+            <3>8. [ i \in dom |-> IF i \in DOMAIN fn THEN fn[i] ELSE base[i] ]
+                    = [ i \in DOMAIN base |-> IF i \in beat THEN updA(i) ELSE base[i] ]
+                BY <3>5, <3>6, ExtCtor
+            <3>9. ata(beat) = [ i \in DOMAIN base |-> IF i \in beat THEN updA(i) ELSE base[i] ]
+                BY DEF ata
+            <3>10. Plant(base, o, fn) = ata(beat)
+                BY <3>7, <3>8, <3>9
+            <3>11. QED
+                BY <2>3, <3>1, <3>10
+        <2>6. QED
+            BY <2>4, <2>5
+    <1>7. QED
+        BY <1>5, <1>6 DEF c, a
+
 =============================================================================
