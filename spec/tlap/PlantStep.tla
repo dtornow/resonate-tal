@@ -846,4 +846,256 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2 DEF c, a
 
+(* A fulfill of this origin's id, planted into the store, is the store the
+   abstract fulfill returns. *)
+LEMMA FulfillLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskFulfill(req, doc, t)
+                a == P!HandleTaskFulfill(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandleTaskFulfill(req, doc, t)
+    <1> DEFINE a == P!HandleTaskFulfill(base, req, t)
+    <1> DEFINE id == req.id
+    <1>1. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandleTaskFulfill, P!HandleTaskFulfill
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. CASE \/ old.task.state /= "acquired"
+                    \/ old.promise.state /= "pending"
+                    \/ old.task.version /= req.version
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3 DEF c, a, old, id,
+                       HandleTaskFulfill, P!HandleTaskFulfill
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE old.task.state = "acquired"
+                 /\ old.promise.state = "pending"
+                 /\ old.task.version = req.version
+            <3> DEFINE nw ==
+                    [ promise |-> [old.promise EXCEPT !.state     = req.action.state,
+                                                     !.value     = req.action.value,
+                                                     !.settledAt = t],
+                      task    |-> [old.task EXCEPT !.state          = "fulfilled",
+                                                   !.pid            = NoPid,
+                                                   !.ttl            = NoTime,
+                                                   !.leaseTimeoutAt = NoTime,
+                                                   !.retryTimeoutAt = NoTime,
+                                                   !.resumes        = {}] ]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. nw = [ promise |-> [old.promise EXCEPT !.state     = req.action.state,
+                                                        !.value     = req.action.value,
+                                                        !.settledAt = t],
+                         task    |-> [old.task EXCEPT !.state          = "fulfilled",
+                                                      !.pid            = NoPid,
+                                                      !.ttl            = P!NoTime,
+                                                      !.leaseTimeoutAt = P!NoTime,
+                                                      !.retryTimeoutAt = P!NoTime,
+                                                      !.resumes        = {}] ]
+                BY <3>1 DEF nw
+            <3>3. c.doc = Write(doc, id, nw)
+                BY <1>2, <2>4 DEF c, old, nw, id, HandleTaskFulfill
+            <3>4. a = {P!Write(base, id, nw)}
+                BY <2>1, <2>2, <2>4, <3>2 DEF a, old, nw, id, P!HandleTaskFulfill
+            <3>5. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>6. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>7. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>4, <3>5, <3>6
+            <3>8. QED
+                BY <3>7
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
+(* A task create on this origin's id, planted into the store, is the store
+   the abstract task create returns. *)
+LEMMA TaskCreateLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.action.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskCreate(req, doc, t)
+                a == P!HandleTaskCreate(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandleTaskCreate(req, doc, t)
+    <1> DEFINE a == P!HandleTaskCreate(base, req, t)
+    <1> DEFINE id == req.action.id
+    <1>1. CASE ~req.action.tags.targeted
+        <2>1. c = Skip(doc) /\ a = {}
+            BY <1>1 DEF c, a, id, HandleTaskCreate, P!HandleTaskCreate
+        <2>2. QED
+            BY <2>1 DEF Skip
+    <1>2. CASE req.action.tags.targeted /\ id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. New(req.action, t) = P!New(req.action, t)
+            BY Isa DEF New, P!New, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE born == New(req.action, t)
+        <2> DEFINE held ==
+                [born EXCEPT !.task.state          = "acquired",
+                             !.task.version        = @ + 1,
+                             !.task.ttl            = req.ttl,
+                             !.task.pid            = req.pid,
+                             !.task.leaseTimeoutAt = t + req.ttl,
+                             !.task.retryTimeoutAt = NoTime,
+                             !.task.resumes        = {}]
+        <2>3. NoTime = P!NoTime
+            BY DEF NoTime, P!NoTime
+        <2>4. held = [born EXCEPT !.task.state          = "acquired",
+                                   !.task.version        = @ + 1,
+                                   !.task.ttl            = req.ttl,
+                                   !.task.pid            = req.pid,
+                                   !.task.leaseTimeoutAt = t + req.ttl,
+                                   !.task.retryTimeoutAt = P!NoTime,
+                                   !.task.resumes        = {}]
+            BY <2>3 DEF held
+        <2>4b. a = {P!Write(base, id,
+                      IF P!New(req.action, t).promise.state = "pending"
+                      THEN [P!New(req.action, t) EXCEPT
+                                !.task.state          = "acquired",
+                                !.task.version        = @ + 1,
+                                !.task.ttl            = req.ttl,
+                                !.task.pid            = req.pid,
+                                !.task.leaseTimeoutAt = t + req.ttl,
+                                !.task.retryTimeoutAt = P!NoTime,
+                                !.task.resumes        = {}]
+                      ELSE P!New(req.action, t))}
+            BY <1>2, <2>1 DEF a, id, P!HandleTaskCreate
+        <2>5. CASE born.promise.state = "pending"
+            <3>1. c.doc = Write(doc, id, held)
+                BY <1>2, <2>5 DEF c, id, born, held, HandleTaskCreate
+            <3>2. a = {P!Write(base, id, held)}
+                BY <2>2, <2>4, <2>4b, <2>5, Zenon DEF born, held
+            <3>3. Plant(base, o, Write(doc, id, held)) = Write(base, id, held)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = held, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>4. Write(base, id, held) = P!Write(base, id, held)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = held
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>5. a = {Plant(base, o, c.doc)}
+                BY <3>1, <3>2, <3>3, <3>4
+            <3>6. QED
+                BY <3>5
+        <2>6. CASE born.promise.state /= "pending"
+            <3>1. c.doc = Write(doc, id, born)
+                BY <1>2, <2>6 DEF c, id, born, held, HandleTaskCreate
+            <3>2. a = {P!Write(base, id, born)}
+                BY <2>2, <2>4b, <2>6, Zenon DEF born
+            <3>3. Plant(base, o, Write(doc, id, born)) = Write(base, id, born)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = born, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>4. Write(base, id, born) = P!Write(base, id, born)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = born
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>5. a = {Plant(base, o, c.doc)}
+                BY <3>1, <3>2, <3>3, <3>4
+            <3>6. QED
+                BY <3>5
+        <2>7. QED
+            BY <2>5, <2>6
+    <1>3. CASE req.action.tags.targeted /\ id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>3, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. CASE ~old.promise.tags.targeted \/ old.task.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>3, <2>1, <2>2, <2>3 DEF c, a, id, old,
+                       HandleTaskCreate, P!HandleTaskCreate
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE old.promise.tags.targeted /\ old.task.state = "pending"
+            <3> DEFINE nw ==
+                    [old EXCEPT !.task.state          = "acquired",
+                                !.task.version        = @ + 1,
+                                !.task.ttl            = req.ttl,
+                                !.task.pid            = req.pid,
+                                !.task.leaseTimeoutAt = t + req.ttl,
+                                !.task.retryTimeoutAt = NoTime,
+                                !.task.resumes        = {}]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. nw = [old EXCEPT !.task.state          = "acquired",
+                                   !.task.version        = @ + 1,
+                                   !.task.ttl            = req.ttl,
+                                   !.task.pid            = req.pid,
+                                   !.task.leaseTimeoutAt = t + req.ttl,
+                                   !.task.retryTimeoutAt = P!NoTime,
+                                   !.task.resumes        = {}]
+                BY <3>1 DEF nw
+            <3>3. c.doc = Write(doc, id, nw)
+                BY <1>3, <2>4 DEF c, id, old, nw, HandleTaskCreate
+            <3>4. a = {P!Write(base, id, nw)}
+                BY <1>3, <2>1, <2>2, <2>4, <3>2 DEF a, id, old, nw, P!HandleTaskCreate
+            <3>5. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>6. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>7. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>4, <3>5, <3>6
+            <3>8. QED
+                BY <3>7
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>4. QED
+        BY <1>1, <1>2, <1>3 DEF c, a, id
+
 =============================================================================
