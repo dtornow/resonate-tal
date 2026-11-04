@@ -1529,4 +1529,586 @@ PROOF
     <1>7. QED
         BY <1>5, <1>6 DEF c, a
 
+LEMMA ProjConj ==
+    ASSUME NEW p, NEW q, p /\ q
+    PROVE  q
+PROOF
+    BY Zenon
+
+LEMMA MissSome ==
+    ASSUME NEW aw, NEW dom
+    PROVE  { x \in aw : x \in dom } /= aw <=> \E x \in aw : x \notin dom
+PROOF
+    BY Z3
+
+LEMMA SuspendShape ==
+    ASSUME NEW st, NEW req, NEW t
+    PROVE  P!HandleTaskSuspend(st, req, t)
+              = LET aw == {x.awaited : x \in req.actions}
+                IN  IF \/ req.actions = {}
+                       \/ req.id \in aw
+                       \/ \E x \in aw : x.origin /= req.id.origin
+                       \/ req.id \notin DOMAIN st
+                       \/ \E x \in aw : x \notin DOMAIN st
+                    THEN {}
+                    ELSE LET old == P!Project(st[req.id], t)
+                         IN  IF \/ old.task.state /= "acquired"
+                                \/ old.promise.state /= "pending"
+                                \/ old.task.version /= req.version
+                                \/ \E x \in aw : ~P!IsExternal(P!Project(st[x], t).promise)
+                             THEN {}
+                             ELSE IF \E x \in aw : P!Project(st[x], t).promise.state /= "pending"
+                                  THEN {P!Write(st, req.id, [old EXCEPT !.task.resumes = {}])}
+                                  ELSE {[ i \in DOMAIN st |->
+                                            IF i = req.id THEN
+                                                [old EXCEPT !.task.state          = "suspended",
+                                                            !.task.pid            = NoPid,
+                                                            !.task.ttl            = P!NoTime,
+                                                            !.task.leaseTimeoutAt = P!NoTime,
+                                                            !.task.retryTimeoutAt = P!NoTime,
+                                                            !.task.resumes        = {}]
+                                            ELSE IF i \in aw THEN
+                                                [P!Project(st[i], t) EXCEPT
+                                                     !.promise.callbacks = @ \cup {req.id}]
+                                            ELSE st[i] ]}
+PROOF
+    BY ONLY DEF P!HandleTaskSuspend
+
+LEMMA SuspendHere ==
+    ASSUME NEW req, NEW st, NEW t, NEW aw0, NEW old0,
+           aw0 = {x.awaited : x \in req.actions},
+           old0 = P!Project(st[req.id], t),
+           ~ (\/ req.actions = {}
+              \/ req.id \in aw0
+              \/ \E x \in aw0 : x.origin /= req.id.origin
+              \/ req.id \notin DOMAIN st
+              \/ \E x \in aw0 : x \notin DOMAIN st),
+           ~ (\/ old0.task.state /= "acquired"
+              \/ old0.promise.state /= "pending"
+              \/ old0.task.version /= req.version
+              \/ \E x \in aw0 : ~P!IsExternal(P!Project(st[x], t).promise)),
+           ~ (\E x \in aw0 : P!Project(st[x], t).promise.state /= "pending")
+    PROVE  P!HandleTaskSuspend(st, req, t)
+              = {[ i \in DOMAIN st |->
+                    IF i = req.id THEN
+                        [old0 EXCEPT !.task.state          = "suspended",
+                                     !.task.pid            = NoPid,
+                                     !.task.ttl            = P!NoTime,
+                                     !.task.leaseTimeoutAt = P!NoTime,
+                                     !.task.retryTimeoutAt = P!NoTime,
+                                     !.task.resumes        = {}]
+                    ELSE IF i \in aw0 THEN
+                        [P!Project(st[i], t) EXCEPT
+                             !.promise.callbacks = @ \cup {req.id}]
+                    ELSE st[i] ]}
+PROOF
+    BY SuspendShape, Zenon
+
+LEMMA SuspendClear ==
+    ASSUME NEW st, NEW req, NEW t, NEW aw0, NEW old0,
+           aw0 = {x.awaited : x \in req.actions},
+           old0 = P!Project(st[req.id], t),
+           ~ (\/ req.actions = {}
+              \/ req.id \in aw0
+              \/ \E x \in aw0 : x.origin /= req.id.origin
+              \/ req.id \notin DOMAIN st
+              \/ \E x \in aw0 : x \notin DOMAIN st),
+           ~ (\/ old0.task.state /= "acquired"
+              \/ old0.promise.state /= "pending"
+              \/ old0.task.version /= req.version
+              \/ \E x \in aw0 : ~P!IsExternal(P!Project(st[x], t).promise)),
+           \E x \in aw0 : P!Project(st[x], t).promise.state /= "pending"
+    PROVE  P!HandleTaskSuspend(st, req, t)
+              = {P!Write(st, req.id, [old0 EXCEPT !.task.resumes = {}])}
+PROOF
+    BY SuspendShape, Zenon
+
+LEMMA SuspendDocClear ==
+    ASSUME NEW dd, NEW req, NEW t, NEW aw, NEW seen, NEW old,
+           aw = {x.awaited : x \in req.actions},
+           seen = {x \in aw : x \in DOMAIN dd},
+           old = Project(dd[req.id], t),
+           ~ (\/ req.actions = {}
+              \/ req.id \in aw
+              \/ \E x \in aw : x.origin /= req.id.origin
+              \/ req.id \notin DOMAIN dd
+              \/ seen /= aw),
+           ~ (\/ old.task.state /= "acquired"
+              \/ old.promise.state /= "pending"
+              \/ old.task.version /= req.version
+              \/ \E x \in aw : ~IsExternal(Project(dd[x], t).promise)),
+           \E x \in aw : Project(dd[x], t).promise.state /= "pending"
+    PROVE  HandleTaskSuspend(req, dd, t).doc
+              = Write(dd, req.id, [old EXCEPT !.task.resumes = {}])
+PROOF
+    BY DEF HandleTaskSuspend
+
+LEMMA SuspendDocFn ==
+    ASSUME NEW dd, NEW req, NEW t, NEW aw, NEW seen, NEW old, NEW nw,
+           aw = {x.awaited : x \in req.actions},
+           seen = {x \in aw : x \in DOMAIN dd},
+           old = Project(dd[req.id], t),
+           nw = [old EXCEPT !.task.state          = "suspended",
+                            !.task.pid            = NoPid,
+                            !.task.ttl            = NoTime,
+                            !.task.leaseTimeoutAt = NoTime,
+                            !.task.retryTimeoutAt = NoTime,
+                            !.task.resumes        = {}],
+           ~ (\/ req.actions = {}
+              \/ req.id \in aw
+              \/ \E x \in aw : x.origin /= req.id.origin
+              \/ req.id \notin DOMAIN dd
+              \/ seen /= aw),
+           ~ (\/ old.task.state /= "acquired"
+              \/ old.promise.state /= "pending"
+              \/ old.task.version /= req.version
+              \/ \E x \in aw : ~IsExternal(Project(dd[x], t).promise)),
+           \A x \in aw : Project(dd[x], t).promise.state = "pending"
+    PROVE  HandleTaskSuspend(req, dd, t).doc
+              = [ i \in DOMAIN dd |->
+                    IF i = req.id THEN nw
+                    ELSE IF i \in aw THEN
+                        [Project(dd[i], t) EXCEPT !.promise.callbacks = @ \cup {req.id}]
+                    ELSE dd[i] ]
+PROOF
+    BY DEF HandleTaskSuspend
+
+(* A suspend on this origin's document, planted into the store, is the store
+   the abstract suspend returns. A disabled suspend leaves the document. *)
+LEMMA SuspendLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskSuspend(req, doc, t)
+                a == P!HandleTaskSuspend(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandleTaskSuspend(req, doc, t)
+    <1> DEFINE a == P!HandleTaskSuspend(base, req, t)
+    <1> DEFINE aw == { x.awaited : x \in req.actions }
+    <1> DEFINE seen == { x \in aw : x \in DOMAIN doc }
+    <1> DEFINE id == req.id
+    <1>1. CASE \/ req.actions = {}
+                \/ id \in aw
+                \/ \E x \in aw : x.origin /= id.origin
+                \/ id \notin DOMAIN doc
+                \/ seen /= aw
+        <2>1. CASE \/ req.actions = {}
+                    \/ id \in aw
+                    \/ \E x \in aw : x.origin /= id.origin
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <2>1 DEF c, a, aw, id, seen, HandleTaskSuspend, P!HandleTaskSuspend
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>2. CASE id \notin DOMAIN doc
+            <3>1. id \notin DOMAIN base
+                BY <2>2 DEF id
+            <3>2. c = Skip(doc) /\ a = {}
+                BY <2>2, <3>1 DEF c, a, aw, id, seen, HandleTaskSuspend,
+                       P!HandleTaskSuspend
+            <3>3. QED
+                BY <3>2 DEF Skip
+        <2>3. CASE seen /= aw
+            <3>1. \E x \in aw : x \notin DOMAIN doc
+                BY <2>3, MissSome DEF seen
+            <3>2. PICK x \in aw : x \notin DOMAIN doc
+                BY <3>1
+            <3>3. CASE x.origin /= id.origin
+                <4>1. c = Skip(doc) /\ a = {}
+                    BY <2>3, <3>2, <3>3 DEF c, a, aw, id, seen, HandleTaskSuspend,
+                           P!HandleTaskSuspend
+                <4>2. QED
+                    BY <4>1 DEF Skip
+            <3>4. CASE x.origin = id.origin
+                <4>1. x.origin = o /\ x \notin DOMAIN base
+                    BY <3>2, <3>4 DEF id
+                <4>2. c = Skip(doc) /\ a = {}
+                    BY <2>3, <3>2, <4>1 DEF c, a, aw, id, seen, HandleTaskSuspend,
+                           P!HandleTaskSuspend
+                <4>3. QED
+                    BY <4>2 DEF Skip
+            <3>5. QED
+                BY <3>3, <3>4
+        <2>4. QED
+            BY <1>1, <2>1, <2>2, <2>3 DEF id
+    <1>2. CASE req.actions /= {}
+             /\ id \notin aw
+             /\ \A x \in aw : x.origin = id.origin
+             /\ id \in DOMAIN doc
+             /\ seen = aw
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2 DEF id
+        <2>2. \A x \in aw : x \in DOMAIN doc
+            BY <1>2, MissSome DEF seen
+        <2>3. \A x \in aw : x \in DOMAIN base /\ base[x] = doc[x] /\ x.origin = o
+            BY <1>2, <2>2 DEF id
+        <2>4. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2>5. \A x \in aw : Project(doc[x], t) = P!Project(base[x], t)
+            <3> SUFFICES ASSUME NEW x \in aw
+                         PROVE  Project(doc[x], t) = P!Project(base[x], t)
+                OBVIOUS
+            <3>1. x \in DOMAIN doc /\ base[x] = doc[x]
+                BY <2>2, <2>3
+            <3>2. QED
+                BY <3>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>6. old = P!Project(base[id], t)
+            BY <2>4 DEF old
+        <2>7. \A x \in aw :
+                IsExternal(Project(doc[x], t).promise)
+                  <=> P!IsExternal(P!Project(base[x], t).promise)
+            <3> SUFFICES ASSUME NEW x \in aw
+                         PROVE  IsExternal(Project(doc[x], t).promise)
+                                  <=> P!IsExternal(P!Project(base[x], t).promise)
+                OBVIOUS
+            <3>1. Project(doc[x], t) = P!Project(base[x], t)
+                BY <2>5
+            <3>2. QED
+                BY <3>1 DEF IsExternal, P!IsExternal
+        <2>8. \A x \in aw :
+                Project(doc[x], t).promise.state = P!Project(base[x], t).promise.state
+            <3> SUFFICES ASSUME NEW x \in aw
+                         PROVE  Project(doc[x], t).promise.state
+                                  = P!Project(base[x], t).promise.state
+                OBVIOUS
+            <3>1. Project(doc[x], t) = P!Project(base[x], t)
+                BY <2>5
+            <3>2. QED
+                BY <3>1
+        <2>9. CASE \/ old.task.state /= "acquired"
+                    \/ old.promise.state /= "pending"
+                    \/ old.task.version /= req.version
+                    \/ \E x \in aw : ~IsExternal(Project(doc[x], t).promise)
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>6, <2>7, <2>9 DEF c, a, aw, id, old, seen,
+                       HandleTaskSuspend, P!HandleTaskSuspend
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>10. CASE old.task.state = "acquired"
+                  /\ old.promise.state = "pending"
+                  /\ old.task.version = req.version
+                  /\ (\A x \in aw : IsExternal(Project(doc[x], t).promise))
+                  /\ (\E x \in aw : Project(doc[x], t).promise.state /= "pending")
+            <3> DEFINE nw == [old EXCEPT !.task.resumes = {}]
+            <3>1. c.doc = Write(doc, id, nw)
+                <4>1. ASSUME NEW dd, NEW aw1, NEW seen1, NEW old1,
+                             dd = doc, aw1 = aw, seen1 = seen, old1 = old,
+                             aw1 = {x.awaited : x \in req.actions},
+                             seen1 = {x \in aw1 : x \in DOMAIN dd},
+                             old1 = Project(dd[req.id], t),
+                             ~ (\/ req.actions = {}
+                                \/ req.id \in aw1
+                                \/ \E x \in aw1 : x.origin /= req.id.origin
+                                \/ req.id \notin DOMAIN dd
+                                \/ seen1 /= aw1),
+                             ~ (\/ old1.task.state /= "acquired"
+                                \/ old1.promise.state /= "pending"
+                                \/ old1.task.version /= req.version
+                                \/ \E x \in aw1 : ~IsExternal(Project(dd[x], t).promise)),
+                             \E x \in aw1 : Project(dd[x], t).promise.state /= "pending"
+                      PROVE  HandleTaskSuspend(req, dd, t).doc
+                               = Write(dd, req.id, [old1 EXCEPT !.task.resumes = {}])
+                    BY <4>1, SuspendDocClear
+                <4>2. ~ (\/ req.actions = {}
+                         \/ req.id \in aw
+                         \/ \E x \in aw : x.origin /= req.id.origin
+                         \/ req.id \notin DOMAIN doc
+                         \/ seen /= aw)
+                    BY <1>2, Z3 DEF id
+                <4>3. ~ (\/ old.task.state /= "acquired"
+                         \/ old.promise.state /= "pending"
+                         \/ old.task.version /= req.version
+                         \/ \E x \in aw : ~IsExternal(Project(doc[x], t).promise))
+                    BY <2>10, Z3
+                <4>4. \E x \in aw : Project(doc[x], t).promise.state /= "pending"
+                    <5> DEFINE p ==
+                            old.task.state = "acquired"
+                            /\ old.promise.state = "pending"
+                            /\ old.task.version = req.version
+                            /\ \A x \in aw : IsExternal(Project(doc[x], t).promise)
+                    <5> DEFINE q ==
+                            \E x \in aw : Project(doc[x], t).promise.state /= "pending"
+                    <5>1. p /\ q
+                        BY <2>10 DEF p, q
+                    <5>2. ASSUME NEW pp, NEW qq, pp = p, qq = q, pp /\ qq
+                          PROVE  qq
+                        BY <5>2, ProjConj
+                    <5>3. QED
+                        BY <5>1, <5>2, Zenon DEF q
+                <4>5. HandleTaskSuspend(req, doc, t).doc
+                        = Write(doc, req.id, [old EXCEPT !.task.resumes = {}])
+                    BY <4>1, <4>2, <4>3, <4>4, Isa DEF aw, seen, old
+                <4>6. QED
+                    BY <4>5 DEF c, id, nw
+            <3>2. a = {P!Write(base, id, nw)}
+                <4>1. ASSUME NEW st, NEW aw0, NEW old0,
+                             st = base,
+                             aw0 = {x.awaited : x \in req.actions},
+                             old0 = P!Project(st[req.id], t),
+                             ~ (\/ req.actions = {}
+                                \/ req.id \in aw0
+                                \/ \E x \in aw0 : x.origin /= req.id.origin
+                                \/ req.id \notin DOMAIN st
+                                \/ \E x \in aw0 : x \notin DOMAIN st),
+                             ~ (\/ old0.task.state /= "acquired"
+                                \/ old0.promise.state /= "pending"
+                                \/ old0.task.version /= req.version
+                                \/ \E x \in aw0 : ~P!IsExternal(P!Project(st[x], t).promise)),
+                             \E x \in aw0 : P!Project(st[x], t).promise.state /= "pending"
+                      PROVE  P!HandleTaskSuspend(st, req, t)
+                               = {P!Write(st, req.id, [old0 EXCEPT !.task.resumes = {}])}
+                    BY <4>1, SuspendClear
+                <4>2. ~ (\/ req.actions = {}
+                         \/ req.id \in aw
+                         \/ \E x \in aw : x.origin /= req.id.origin
+                         \/ req.id \notin DOMAIN base
+                         \/ \E x \in aw : x \notin DOMAIN base)
+                    BY <1>2, <2>1, <2>3, Z3 DEF id
+                <4>3. ~ (\/ old.task.state /= "acquired"
+                         \/ old.promise.state /= "pending"
+                         \/ old.task.version /= req.version
+                         \/ \E x \in aw : ~P!IsExternal(P!Project(base[x], t).promise))
+                    BY <2>6, <2>7, <2>10, Z3 DEF old
+                <4>4. \E x \in aw : P!Project(base[x], t).promise.state /= "pending"
+                    <5> DEFINE p ==
+                            old.task.state = "acquired"
+                            /\ old.promise.state = "pending"
+                            /\ old.task.version = req.version
+                            /\ \A x \in aw : IsExternal(Project(doc[x], t).promise)
+                    <5> DEFINE q ==
+                            \E x \in aw : Project(doc[x], t).promise.state /= "pending"
+                    <5>1. p /\ q
+                        BY <2>10 DEF p, q
+                    <5>2. ASSUME NEW pp, NEW qq, pp = p, qq = q, pp /\ qq
+                          PROVE  qq
+                        BY <5>2, ProjConj
+                    <5>3. q
+                        BY <5>1, <5>2, Zenon DEF q
+                    <5>4. QED
+                        BY <2>8, <5>3, Zenon
+                <4>5. P!HandleTaskSuspend(base, req, t)
+                        = {P!Write(base, req.id, [old EXCEPT !.task.resumes = {}])}
+                    BY <2>6, <4>1, <4>2, <4>3, <4>4, Isa DEF aw, id, old
+                <4>6. QED
+                    BY <4>5 DEF a, id, nw
+            <3>3. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>4. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>5. a = {Plant(base, o, c.doc)}
+                BY <3>1, <3>2, <3>3, <3>4
+            <3>6. QED
+                BY <3>2, <3>5
+        <2>11. CASE old.task.state = "acquired"
+                  /\ old.promise.state = "pending"
+                  /\ old.task.version = req.version
+                  /\ (\A x \in aw : IsExternal(Project(doc[x], t).promise))
+                  /\ (\A x \in aw : Project(doc[x], t).promise.state = "pending")
+            <3> DEFINE nw ==
+                    [old EXCEPT !.task.state          = "suspended",
+                                !.task.pid            = NoPid,
+                                !.task.ttl            = NoTime,
+                                !.task.leaseTimeoutAt = NoTime,
+                                !.task.retryTimeoutAt = NoTime,
+                                !.task.resumes        = {}]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. nw = [old EXCEPT !.task.state          = "suspended",
+                                   !.task.pid            = NoPid,
+                                   !.task.ttl            = P!NoTime,
+                                   !.task.leaseTimeoutAt = P!NoTime,
+                                   !.task.retryTimeoutAt = P!NoTime,
+                                   !.task.resumes        = {}]
+                BY <3>1 DEF nw
+            <3> DEFINE fn ==
+                    [ i \in DOMAIN doc |->
+                        IF i = id THEN nw
+                        ELSE IF i \in aw THEN
+                            [Project(doc[i], t) EXCEPT
+                                 !.promise.callbacks = @ \cup {id}]
+                        ELSE doc[i] ]
+            <3> DEFINE fnA ==
+                    [ i \in DOMAIN base |->
+                        IF i = id THEN nw
+                        ELSE IF i \in aw THEN
+                            [P!Project(base[i], t) EXCEPT
+                                 !.promise.callbacks = @ \cup {id}]
+                        ELSE base[i] ]
+            <3>3. c.doc = fn
+                <4>1. ASSUME NEW dd, NEW aw1, NEW seen1, NEW old1, NEW nw1,
+                             dd = doc, aw1 = aw, seen1 = seen, old1 = old, nw1 = nw,
+                             aw1 = {x.awaited : x \in req.actions},
+                             seen1 = {x \in aw1 : x \in DOMAIN dd},
+                             old1 = Project(dd[req.id], t),
+                             nw1 = [old1 EXCEPT !.task.state          = "suspended",
+                                                !.task.pid            = NoPid,
+                                                !.task.ttl            = NoTime,
+                                                !.task.leaseTimeoutAt = NoTime,
+                                                !.task.retryTimeoutAt = NoTime,
+                                                !.task.resumes        = {}],
+                             ~ (\/ req.actions = {}
+                                \/ req.id \in aw1
+                                \/ \E x \in aw1 : x.origin /= req.id.origin
+                                \/ req.id \notin DOMAIN dd
+                                \/ seen1 /= aw1),
+                             ~ (\/ old1.task.state /= "acquired"
+                                \/ old1.promise.state /= "pending"
+                                \/ old1.task.version /= req.version
+                                \/ \E x \in aw1 : ~IsExternal(Project(dd[x], t).promise)),
+                             \A x \in aw1 : Project(dd[x], t).promise.state = "pending"
+                      PROVE  HandleTaskSuspend(req, dd, t).doc
+                               = [ i \in DOMAIN dd |->
+                                     IF i = req.id THEN nw1
+                                     ELSE IF i \in aw1 THEN
+                                         [Project(dd[i], t) EXCEPT
+                                              !.promise.callbacks = @ \cup {req.id}]
+                                     ELSE dd[i] ]
+                    BY <4>1, SuspendDocFn
+                <4>2. ~ (\/ req.actions = {}
+                         \/ req.id \in aw
+                         \/ \E x \in aw : x.origin /= req.id.origin
+                         \/ req.id \notin DOMAIN doc
+                         \/ seen /= aw)
+                    BY <1>2, Z3 DEF id
+                <4>3. ~ (\/ old.task.state /= "acquired"
+                         \/ old.promise.state /= "pending"
+                         \/ old.task.version /= req.version
+                         \/ \E x \in aw : ~IsExternal(Project(doc[x], t).promise))
+                    BY <2>11, Z3
+                <4>4. \A x \in aw : Project(doc[x], t).promise.state = "pending"
+                    BY <2>11
+                <4>5. HandleTaskSuspend(req, doc, t).doc
+                        = [ i \in DOMAIN doc |->
+                              IF i = req.id THEN nw
+                              ELSE IF i \in aw THEN
+                                  [Project(doc[i], t) EXCEPT
+                                       !.promise.callbacks = @ \cup {req.id}]
+                              ELSE doc[i] ]
+                    BY <4>1, <4>2, <4>3, <4>4, Isa DEF aw, seen, old, nw
+                <4>6. QED
+                    BY <4>5, Zenon DEF c, id, fn
+            <3>4. \A i \in DOMAIN doc :
+                    [Project(doc[i], t) EXCEPT !.promise.callbacks = @ \cup {id}]
+                      = [P!Project(base[i], t) EXCEPT !.promise.callbacks = @ \cup {id}]
+                <4> SUFFICES ASSUME NEW i \in DOMAIN doc
+                             PROVE  [Project(doc[i], t) EXCEPT !.promise.callbacks = @ \cup {id}]
+                                      = [P!Project(base[i], t) EXCEPT
+                                             !.promise.callbacks = @ \cup {id}]
+                    OBVIOUS
+                <4>1. i \in DOMAIN base /\ base[i] = doc[i]
+                    BY Zenon
+                <4>2. Project(doc[i], t) = P!Project(base[i], t)
+                    BY <4>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+                <4>3. QED
+                    BY <4>2, Isa
+            <3>5. \A i \in DOMAIN base :
+                    (IF i \in DOMAIN doc THEN fn[i] ELSE base[i]) = fnA[i]
+                <4> SUFFICES ASSUME NEW i \in DOMAIN base
+                             PROVE  (IF i \in DOMAIN doc THEN fn[i] ELSE base[i]) = fnA[i]
+                    OBVIOUS
+                <4>1. CASE i \in DOMAIN doc
+                    <5>1. fn[i] = (IF i = id THEN nw
+                                   ELSE IF i \in aw THEN
+                                       [Project(doc[i], t) EXCEPT
+                                            !.promise.callbacks = @ \cup {id}]
+                                   ELSE doc[i])
+                        BY <4>1 DEF fn
+                    <5>2. base[i] = doc[i]
+                        BY <4>1, Zenon
+                    <5>3. QED
+                        BY <3>4, <4>1, <5>1, <5>2 DEF fnA, id
+                <4>2. CASE i \notin DOMAIN doc
+                    <5>1. i /= id /\ i \notin aw
+                        BY <2>1, <2>3, <4>2 DEF id
+                    <5>2. QED
+                        BY <4>2, <5>1 DEF fnA
+                <4>3. QED
+                    BY <4>1, <4>2
+            <3>6. DOMAIN fn = DOMAIN doc
+                BY DomCtor DEF fn
+            <3> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+            <3> DEFINE dom == kept \cup DOMAIN fn
+            <3>7. \A i : i \in dom <=> i \in DOMAIN base
+                BY <3>6 DEF kept, dom
+            <3>8. dom = DOMAIN base
+                BY <3>7, SetExtensionality DEF dom
+            <3>9. Plant(base, o, fn)
+                    = [ i \in dom |-> IF i \in DOMAIN fn THEN fn[i] ELSE base[i] ]
+                BY <3>8 DEF Plant, kept, dom
+            <3>10. [ i \in dom |-> IF i \in DOMAIN fn THEN fn[i] ELSE base[i] ] = fnA
+                <4>1. \A i \in dom :
+                        (IF i \in DOMAIN fn THEN fn[i] ELSE base[i]) = fnA[i]
+                    BY <3>5, <3>6, <3>8
+                <4>2. QED
+                    BY <3>8, <4>1, ExtCtor DEF fnA
+            <3>11. Plant(base, o, fn) = fnA
+                BY <3>9, <3>10
+            <3>12. ~ (\/ req.actions = {}
+                      \/ id \in aw
+                      \/ \E x \in aw : x.origin /= id.origin
+                      \/ id \notin DOMAIN base
+                      \/ \E x \in aw : x \notin DOMAIN base)
+                BY <1>2, <2>1, <2>3 DEF id
+            <3>13. ~ (\/ old.task.state /= "acquired"
+                      \/ old.promise.state /= "pending"
+                      \/ old.task.version /= req.version
+                      \/ \E x \in aw : ~P!IsExternal(P!Project(base[x], t).promise))
+                BY <2>6, <2>7, <2>11 DEF old
+            <3>14. ~ (\E x \in aw : P!Project(base[x], t).promise.state /= "pending")
+                BY <2>6, <2>8, <2>11 DEF old
+            <3>15. a = {fnA}
+                <4>1. ASSUME NEW st, NEW aw0, NEW old0,
+                             st = base, aw0 = aw, old0 = old,
+                             aw0 = {x.awaited : x \in req.actions},
+                             old0 = P!Project(st[req.id], t),
+                             ~ (\/ req.actions = {}
+                                \/ req.id \in aw0
+                                \/ \E x \in aw0 : x.origin /= req.id.origin
+                                \/ req.id \notin DOMAIN st
+                                \/ \E x \in aw0 : x \notin DOMAIN st),
+                             ~ (\/ old0.task.state /= "acquired"
+                                \/ old0.promise.state /= "pending"
+                                \/ old0.task.version /= req.version
+                                \/ \E x \in aw0 : ~P!IsExternal(P!Project(st[x], t).promise)),
+                             ~ (\E x \in aw0 : P!Project(st[x], t).promise.state /= "pending")
+                      PROVE  P!HandleTaskSuspend(st, req, t)
+                               = {[ i \in DOMAIN st |->
+                                     IF i = req.id THEN
+                                         [old0 EXCEPT !.task.state          = "suspended",
+                                                      !.task.pid            = NoPid,
+                                                      !.task.ttl            = P!NoTime,
+                                                      !.task.leaseTimeoutAt = P!NoTime,
+                                                      !.task.retryTimeoutAt = P!NoTime,
+                                                      !.task.resumes        = {}]
+                                     ELSE IF i \in aw0 THEN
+                                         [P!Project(st[i], t) EXCEPT
+                                              !.promise.callbacks = @ \cup {req.id}]
+                                     ELSE st[i] ]}
+                    BY <4>1, SuspendHere
+                <4>2. QED
+                    BY <2>6, <3>2, <3>12, <3>13, <3>14, <4>1, Zenon, Isa
+                       DEF a, aw, id, old, fnA
+            <3>16. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>11, <3>15
+            <3>17. QED
+                BY <3>15, <3>16
+        <2>12. QED
+            BY <2>9, <2>10, <2>11
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a, id
+
 =============================================================================
