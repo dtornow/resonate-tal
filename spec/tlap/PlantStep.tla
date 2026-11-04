@@ -205,4 +205,96 @@ PROOF
     <1>9. QED
         BY <1>6, <1>7, <1>8 DEF body
 
+(* An enabled settle on the origin document, planted into the store, is the
+   store the abstract settle returns. A disabled settle leaves the document. *)
+LEMMA SettleLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandlePromiseSettle(req, doc, t)
+                a == P!HandlePromiseSettle(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandlePromiseSettle(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseSettle(base, req, t)
+    <1> DEFINE id == req.id
+    <1>1. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandlePromiseSettle, P!HandlePromiseSettle
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. CASE old.promise.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3 DEF c, a, old, id,
+                   HandlePromiseSettle, P!HandlePromiseSettle
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE old.promise.state = "pending"
+            <3> DEFINE new ==
+                    [ promise |-> [old.promise EXCEPT !.state     = req.state,
+                                                     !.value     = req.value,
+                                                     !.settledAt = t],
+                      task    |-> [old.task EXCEPT !.state          = IF @ = "none" THEN "none"
+                                                                      ELSE "fulfilled",
+                                                   !.pid            = NoPid,
+                                                   !.ttl            = NoTime,
+                                                   !.leaseTimeoutAt = NoTime,
+                                                   !.retryTimeoutAt = NoTime,
+                                                   !.resumes        = {}] ]
+            <3> DEFINE oldA == P!Project(base[id], t)
+            <3> DEFINE newA ==
+                    [ promise |-> [oldA.promise EXCEPT !.state     = req.state,
+                                                       !.value     = req.value,
+                                                       !.settledAt = t],
+                      task    |-> [oldA.task EXCEPT !.state          = IF @ = "none" THEN "none"
+                                                                      ELSE "fulfilled",
+                                                   !.pid            = NoPid,
+                                                   !.ttl            = P!NoTime,
+                                                   !.leaseTimeoutAt = P!NoTime,
+                                                   !.retryTimeoutAt = P!NoTime,
+                                                   !.resumes        = {}] ]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. oldA = old /\ newA = new
+                BY <2>2, <3>1, Isa DEF old, oldA, new, newA, NoTime, P!NoTime
+            <3>3. c.doc = Write(doc, id, new)
+                BY <1>2, <2>4, Isa DEF c, old, new, id, HandlePromiseSettle, Skip
+            <3>4. a = {P!Write(base, id, newA)}
+                BY <2>1, <2>4, <3>2, Isa DEF a, old, oldA, newA, id, P!HandlePromiseSettle
+            <3>5. Plant(base, o, Write(doc, id, new)) = Write(base, id, new)
+                <4>1. ASSUME NEW ii, NEW nw,
+                             ii = id, nw = new, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, nw)) = Write(base, ii, nw)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>6. Write(base, id, new) = P!Write(base, id, new)
+                <4>1. ASSUME NEW ii, NEW nw,
+                             ii = id, nw = new
+                      PROVE  Write(base, ii, nw) = P!Write(base, ii, nw)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>7. Write(base, id, new) = P!Write(base, id, newA)
+                BY <3>2, <3>6, Zenon, Isa DEF P!Write
+            <3>8. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>4, <3>5, <3>7
+            <3>9. QED
+                BY <3>8
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
 =============================================================================
