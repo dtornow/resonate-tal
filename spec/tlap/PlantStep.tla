@@ -1,0 +1,208 @@
+------------------------------ MODULE PlantStep ------------------------------
+(* The handler runs on the swept document and the write plants that result.
+   A second origin-local plant replaces the first, and writing one id in the
+   origin document is writing that id in the whole store. *)
+EXTENDS Plant
+
+LEMMA PlantTwice ==
+    ASSUME NEW base, NEW o, NEW mid, NEW body,
+           \A i \in DOMAIN mid : i.origin = o,
+           \A i \in DOMAIN body : i.origin = o
+    PROVE  Plant(Plant(base, o, mid), o, body) = Plant(base, o, body)
+PROOF
+    <1> DEFINE inner == Plant(base, o, mid)
+    <1> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+    <1> DEFINE keptI == { j \in DOMAIN inner : j.origin /= o }
+    <1> DEFINE dom == kept \cup DOMAIN body
+    <1> DEFINE domI == keptI \cup DOMAIN body
+    <1>1. DOMAIN inner = kept \cup DOMAIN mid
+        BY DEF inner, Plant, kept
+    <1>2. keptI = kept
+        <2>1. keptI \subseteq kept
+            <3> SUFFICES ASSUME NEW k \in keptI
+                         PROVE  k \in kept
+                OBVIOUS
+            <3>1. k \in DOMAIN inner /\ k.origin /= o
+                BY DEF keptI
+            <3>2. k \in kept \/ k \in DOMAIN mid
+                BY <1>1, <3>1
+            <3>3. k \notin DOMAIN mid
+                BY <3>1
+            <3>4. QED
+                BY <3>2, <3>3 DEF kept
+        <2>2. kept \subseteq keptI
+            <3> SUFFICES ASSUME NEW k \in kept
+                         PROVE  k \in keptI
+                OBVIOUS
+            <3>1. k \in DOMAIN base /\ k.origin /= o
+                BY DEF kept
+            <3>2. k \in DOMAIN inner
+                BY <1>1, <3>1
+            <3>3. QED
+                BY <3>1, <3>2 DEF keptI
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. domI = dom
+        BY <1>2 DEF domI, dom
+    <1>4. \A i \in DOMAIN inner :
+            inner[i] = IF i \in DOMAIN mid THEN mid[i] ELSE base[i]
+        BY DEF inner, Plant, kept
+    <1>5. \A i \in dom :
+            (IF i \in DOMAIN body THEN body[i] ELSE base[i])
+              = (IF i \in DOMAIN body THEN body[i]
+                 ELSE IF i \in DOMAIN mid THEN mid[i] ELSE base[i])
+        <2> SUFFICES ASSUME NEW k \in dom
+                     PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                               = (IF k \in DOMAIN body THEN body[k]
+                                  ELSE IF k \in DOMAIN mid THEN mid[k] ELSE base[k])
+            OBVIOUS
+        <2>1. CASE k \in DOMAIN body
+            BY <2>1
+        <2>2. CASE k \notin DOMAIN body
+            <3>1. k \in kept
+                BY <2>2 DEF dom
+            <3>2. k.origin /= o
+                BY <3>1 DEF kept
+            <3>3. k \notin DOMAIN mid
+                BY <3>2
+            <3>4. QED
+                BY <2>2, <3>3
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>6. Plant(inner, o, body)
+            = [ i \in domI |-> IF i \in DOMAIN body THEN body[i] ELSE inner[i] ]
+        BY DEF Plant, keptI, domI
+    <1>7. \A i \in domI :
+            (IF i \in DOMAIN body THEN body[i] ELSE inner[i])
+              = (IF i \in DOMAIN body THEN body[i] ELSE base[i])
+        <2> SUFFICES ASSUME NEW k \in domI
+                     PROVE  (IF k \in DOMAIN body THEN body[k] ELSE inner[k])
+                               = (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+            OBVIOUS
+        <2>1. CASE k \in DOMAIN body
+            BY <2>1
+        <2>2. CASE k \notin DOMAIN body
+            <3>1. k \in keptI
+                BY <2>2 DEF domI
+            <3>2. k \in kept /\ k \in DOMAIN inner /\ k.origin /= o
+                BY <1>2, <3>1 DEF keptI
+            <3>3. k \notin DOMAIN mid
+                BY <3>2
+            <3>4. inner[k] = base[k]
+                BY <1>4, <3>2, <3>3
+            <3>5. QED
+                BY <2>2, <3>4
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>8. Plant(base, o, body)
+            = [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+        BY DEF Plant, kept, dom
+    <1>9. [ i \in domI |-> IF i \in DOMAIN body THEN body[i] ELSE inner[i] ]
+            = [ i \in dom |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+        BY <1>3, <1>7, ExtCtor
+    <1>10. QED
+        BY <1>6, <1>8, <1>9 DEF inner
+
+LEMMA PlantWrite ==
+    ASSUME NEW base, NEW o, NEW doc, NEW id, NEW obj,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  Plant(base, o, Write(doc, id, obj)) = Write(base, id, obj)
+PROOF
+    <1> DEFINE body == Write(doc, id, obj)
+    <1> DEFINE kept == { j \in DOMAIN base : j.origin /= o }
+    <1> DEFINE domP == kept \cup DOMAIN body
+    <1> DEFINE domW == (DOMAIN base) \cup {id}
+    <1>1. DOMAIN body = (DOMAIN doc) \cup {id}
+        BY DEF body, Write
+    <1>2. \A i \in DOMAIN body : i.origin = o
+        <2> SUFFICES ASSUME NEW k \in DOMAIN body
+                     PROVE  k.origin = o
+            OBVIOUS
+        <2>1. k \in DOMAIN doc \/ k = id
+            BY <1>1
+        <2>2. CASE k \in DOMAIN doc
+            BY <2>2
+        <2>3. CASE k = id
+            BY <2>3
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>3. domP = domW
+        <2>1. domP \subseteq domW
+            <3> SUFFICES ASSUME NEW k \in domP
+                         PROVE  k \in domW
+                OBVIOUS
+            <3>1. CASE k \in kept
+                BY <3>1 DEF kept, domW
+            <3>2. CASE k \in DOMAIN body
+                <4>1. k \in DOMAIN doc \/ k = id
+                    BY <1>1, <3>2
+                <4>2. QED
+                    BY <4>1 DEF domW
+            <3>3. QED
+                BY <3>1, <3>2 DEF domP
+        <2>2. domW \subseteq domP
+            <3> SUFFICES ASSUME NEW k \in domW
+                         PROVE  k \in domP
+                OBVIOUS
+            <3>1. CASE k = id
+                BY <1>1, <3>1 DEF domP
+            <3>2. CASE k \in DOMAIN base /\ k /= id
+                <4>1. CASE k.origin = o
+                    <5>1. k \in DOMAIN doc
+                        BY <4>1, <3>2
+                    <5>2. QED
+                        BY <1>1, <5>1 DEF domP
+                <4>2. CASE k.origin /= o
+                    BY <3>2, <4>2 DEF kept, domP
+                <4>3. QED
+                    BY <4>1, <4>2
+            <3>3. QED
+                BY <3>1, <3>2 DEF domW
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>4. \A i \in DOMAIN body :
+            body[i] = IF i = id THEN obj ELSE doc[i]
+        BY DEF body, Write
+    <1>5. \A i \in domP :
+            (IF i \in DOMAIN body THEN body[i] ELSE base[i])
+              = (IF i = id THEN obj ELSE base[i])
+        <2> SUFFICES ASSUME NEW k \in domP
+                     PROVE  (IF k \in DOMAIN body THEN body[k] ELSE base[k])
+                               = (IF k = id THEN obj ELSE base[k])
+            OBVIOUS
+        <2>1. CASE k = id
+            <3>1. k \in DOMAIN body
+                BY <1>1, <2>1
+            <3>2. body[k] = obj
+                BY <1>4, <2>1, <3>1
+            <3>3. QED
+                BY <2>1, <3>1, <3>2
+        <2>2. CASE k /= id /\ k \in DOMAIN body
+            <3>1. k \in DOMAIN doc
+                BY <1>1, <2>2
+            <3>2. body[k] = doc[k]
+                BY <1>4, <2>2
+            <3>3. doc[k] = base[k]
+                BY <3>1
+            <3>4. QED
+                BY <2>2, <3>2, <3>3
+        <2>3. CASE k /= id /\ k \notin DOMAIN body
+            BY <2>3
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>6. Plant(base, o, body)
+            = [ i \in domP |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+        BY DEF Plant, kept, domP
+    <1>7. Write(base, id, obj)
+            = [ i \in domW |-> IF i = id THEN obj ELSE base[i] ]
+        BY DEF Write, domW
+    <1>8. [ i \in domP |-> IF i \in DOMAIN body THEN body[i] ELSE base[i] ]
+            = [ i \in domW |-> IF i = id THEN obj ELSE base[i] ]
+        BY <1>3, <1>5, ExtCtor
+    <1>9. QED
+        BY <1>6, <1>7, <1>8 DEF body
+
+=============================================================================
