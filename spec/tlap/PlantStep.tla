@@ -1098,4 +1098,242 @@ PROOF
     <1>4. QED
         BY <1>1, <1>2, <1>3 DEF c, a, id
 
+LEMMA SameHorizon ==
+    Horizon = P!Horizon
+PROOF
+    BY DEF Horizon, P!Horizon
+
+LEMMA SameTags ==
+    Tags = P!Tags
+PROOF
+    BY DEF Tags, P!Tags
+
+LEMMA SameSettleState ==
+    SettleState = P!SettleState
+PROOF
+    BY DEF SettleState, P!SettleState
+
+LEMMA SameCreate ==
+    CreateReq = P!CreateReq
+PROOF
+    BY SameId, SameHorizon, SameTags
+       DEF CreateReq, P!CreateReq, Id, P!Id, Horizon, P!Horizon, Tags, P!Tags
+
+LEMMA SameSettle ==
+    SettleReq = P!SettleReq
+PROOF
+    BY SameId, SameSettleState
+       DEF SettleReq, P!SettleReq, SettleState, P!SettleState, Id, P!Id
+
+LEMMA FenceKind ==
+    ASSUME NEW act, act \in FenceAction
+    PROVE  \/ /\ act.tag = "Create"
+              /\ act.req \in CreateReq
+           \/ /\ act.tag = "Settle"
+              /\ act.req \in SettleReq
+PROOF
+    <1>1. CASE act \in { [tag |-> "Create", req |-> r] : r \in CreateReq }
+        <2>1. PICK r \in CreateReq : act = [tag |-> "Create", req |-> r]
+            BY <1>1
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE act \in { [tag |-> "Settle", req |-> r] : r \in SettleReq }
+        <2>1. PICK r \in SettleReq : act = [tag |-> "Settle", req |-> r]
+            BY <1>2
+        <2>2. QED
+            BY <2>1
+    <1>3. QED
+        BY <1>1, <1>2 DEF FenceAction
+
+LEMMA CreateIn ==
+    ASSUME NEW st, NEW t, NEW Rs, NEW r, NEW y,
+           Rs # {},
+           r \in Rs,
+           y \in P!HandlePromiseCreate(st, r, t)
+    PROVE  y \in P!Flat({ P!HandlePromiseCreate(st, q, t) : q \in Rs })
+PROOF
+    <1>1. y \in UNION { P!HandlePromiseCreate(st, q, t) : q \in Rs }
+        BY Zenon
+    <1>2. { P!HandlePromiseCreate(st, q, t) : q \in Rs } # {}
+        BY Z3
+    <1>3. QED
+        BY <1>1, <1>2 DEF P!Flat
+
+LEMMA SettleIn ==
+    ASSUME NEW st, NEW t, NEW Rs, NEW r, NEW y,
+           Rs # {},
+           r \in Rs,
+           y \in P!HandlePromiseSettle(st, r, t)
+    PROVE  y \in P!Flat({ P!HandlePromiseSettle(st, q, t) : q \in Rs })
+PROOF
+    <1>1. y \in UNION { P!HandlePromiseSettle(st, q, t) : q \in Rs }
+        BY Zenon
+    <1>2. { P!HandlePromiseSettle(st, q, t) : q \in Rs } # {}
+        BY Z3
+    <1>3. QED
+        BY <1>1, <1>2 DEF P!Flat
+
+(* A fence plants the nested create or settle. That store is one result of
+   the abstract fence. A disabled fence leaves the document. *)
+LEMMA FenceLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           req.action \in FenceAction,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskFence(req, doc, t)
+                a == P!HandleTaskFence(base, req.id, req.version, t)
+            IN  c.doc = doc \/ Plant(base, o, c.doc) \in a
+PROOF
+    <1> DEFINE c == HandleTaskFence(req, doc, t)
+    <1> DEFINE a == P!HandleTaskFence(base, req.id, req.version, t)
+    <1> DEFINE nested == req.action.req
+    <1>1. CASE req.id \notin DOMAIN doc
+        <2>1. c = Skip(doc)
+            BY <1>1 DEF c, HandleTaskFence
+        <2>2. QED
+            BY <2>1 DEF Skip
+    <1>2. CASE req.id \in DOMAIN doc
+        <2>1. req.id \in DOMAIN base /\ base[req.id] = doc[req.id]
+            BY <1>2, Zenon
+        <2>2. Project(doc[req.id], t) = P!Project(base[req.id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[req.id], t)
+        <2>3. CASE \/ nested.id = req.id
+                    \/ nested.id.origin /= req.id.origin
+                    \/ old.task.state /= "acquired"
+                    \/ old.promise.state /= "pending"
+                    \/ old.task.version /= req.version
+            <3>1. c = Skip(doc)
+                BY <1>2, <2>3 DEF c, old, nested, HandleTaskFence
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE nested.id /= req.id
+                 /\ nested.id.origin = req.id.origin
+                 /\ old.task.state = "acquired"
+                 /\ old.promise.state = "pending"
+                 /\ old.task.version = req.version
+                 /\ req.action.tag = "Create"
+            <3> DEFINE cc == HandlePromiseCreate(nested, doc, t)
+            <3> DEFINE aa == P!HandlePromiseCreate(base, nested, t)
+            <3> DEFINE Rs == { r \in P!CreateReq : r.id /= req.id }
+            <3>1. IF aa = {} THEN cc.doc = doc
+                  ELSE aa = {Plant(base, o, cc.doc)}
+                <4>1. ASSUME NEW rr,
+                             rr = nested, rr.id.origin = o
+                      PROVE  LET u == HandlePromiseCreate(rr, doc, t)
+                                  v == P!HandlePromiseCreate(base, rr, t)
+                              IN  IF v = {} THEN u.doc = doc
+                                  ELSE v = {Plant(base, o, u.doc)}
+                    BY <4>1, CreateLift
+                <4>2. QED
+                    BY <2>4, <4>1, Zenon DEF nested, cc, aa
+            <3>2. c = cc
+                BY <1>2, <2>4 DEF c, cc, old, nested, HandleTaskFence
+            <3>3. nested \in CreateReq
+                <4>1. \/ /\ req.action.tag = "Create" /\ req.action.req \in CreateReq
+                      \/ /\ req.action.tag = "Settle" /\ req.action.req \in SettleReq
+                    BY FenceKind
+                <4>2. QED
+                    BY <2>4, <4>1 DEF nested
+            <3>4. nested \in Rs
+                BY <2>4, <3>3, SameCreate DEF nested, Rs
+            <3>5. Rs # {}
+                BY <3>4
+            <3>6. CASE aa = {}
+                BY <3>1, <3>2, <3>6 DEF cc
+            <3>7. CASE aa # {}
+                <4>1. aa = {Plant(base, o, cc.doc)}
+                    BY <3>1, <3>7
+                <4>2. Plant(base, o, cc.doc) \in aa
+                    BY <4>1
+                <4>3. Plant(base, o, cc.doc)
+                        \in P!Flat({ P!HandlePromiseCreate(base, q, t) : q \in Rs })
+                    <5>1. Plant(base, o, cc.doc) \in P!HandlePromiseCreate(base, nested, t)
+                        BY <4>2 DEF aa
+                    <5>2. Plant(base, o, cc.doc)
+                            \in UNION { P!HandlePromiseCreate(base, q, t) : q \in Rs }
+                        BY <3>4, <5>1, Zenon
+                    <5>3. { P!HandlePromiseCreate(base, q, t) : q \in Rs } # {}
+                        BY <3>5, Z3
+                    <5>4. QED
+                        BY <5>2, <5>3 DEF P!Flat
+                <4>4. a = P!Flat({ P!HandlePromiseCreate(base, q, t) : q \in Rs })
+                        \cup P!Flat({ P!HandlePromiseSettle(base, q, t) :
+                                       q \in { r \in P!SettleReq : r.id /= req.id } })
+                    BY <1>2, <2>1, <2>2, <2>4, SameCreate, SameSettle
+                       DEF a, old, Rs, P!HandleTaskFence
+                <4>5. Plant(base, o, cc.doc) \in a
+                    BY <4>3, <4>4
+                <4>6. QED
+                    BY <3>2, <4>5 DEF cc
+            <3>8. QED
+                BY <3>6, <3>7
+        <2>5. CASE nested.id /= req.id
+                 /\ nested.id.origin = req.id.origin
+                 /\ old.task.state = "acquired"
+                 /\ old.promise.state = "pending"
+                 /\ old.task.version = req.version
+                 /\ req.action.tag = "Settle"
+            <3> DEFINE cc == HandlePromiseSettle(nested, doc, t)
+            <3> DEFINE aa == P!HandlePromiseSettle(base, nested, t)
+            <3> DEFINE Rs == { r \in P!SettleReq : r.id /= req.id }
+            <3>1. IF aa = {} THEN cc.doc = doc
+                  ELSE aa = {Plant(base, o, cc.doc)}
+                <4>1. ASSUME NEW rr,
+                             rr = nested, rr.id.origin = o
+                      PROVE  LET u == HandlePromiseSettle(rr, doc, t)
+                                  v == P!HandlePromiseSettle(base, rr, t)
+                              IN  IF v = {} THEN u.doc = doc
+                                  ELSE v = {Plant(base, o, u.doc)}
+                    BY <4>1, SettleLift
+                <4>2. QED
+                    BY <2>5, <4>1, Zenon DEF nested, cc, aa
+            <3>2. c = cc
+                BY <1>2, <2>5 DEF c, cc, old, nested, HandleTaskFence
+            <3>3. nested \in SettleReq
+                <4>1. \/ /\ req.action.tag = "Create" /\ req.action.req \in CreateReq
+                      \/ /\ req.action.tag = "Settle" /\ req.action.req \in SettleReq
+                    BY FenceKind
+                <4>2. QED
+                    BY <2>5, <4>1 DEF nested
+            <3>4. nested \in Rs
+                BY <2>5, <3>3, SameSettle DEF nested, Rs
+            <3>5. Rs # {}
+                BY <3>4
+            <3>6. CASE aa = {}
+                BY <3>1, <3>2, <3>6 DEF cc
+            <3>7. CASE aa # {}
+                <4>1. aa = {Plant(base, o, cc.doc)}
+                    BY <3>1, <3>7
+                <4>2. Plant(base, o, cc.doc) \in aa
+                    BY <4>1
+                <4>3. Plant(base, o, cc.doc)
+                        \in P!Flat({ P!HandlePromiseSettle(base, q, t) : q \in Rs })
+                    <5>1. Plant(base, o, cc.doc) \in P!HandlePromiseSettle(base, nested, t)
+                        BY <4>2 DEF aa
+                    <5>2. Plant(base, o, cc.doc)
+                            \in UNION { P!HandlePromiseSettle(base, q, t) : q \in Rs }
+                        BY <3>4, <5>1, Zenon
+                    <5>3. { P!HandlePromiseSettle(base, q, t) : q \in Rs } # {}
+                        BY <3>5, Z3
+                    <5>4. QED
+                        BY <5>2, <5>3 DEF P!Flat
+                <4>4. a = P!Flat({ P!HandlePromiseCreate(base, q, t) :
+                                     q \in { r \in P!CreateReq : r.id /= req.id } })
+                        \cup P!Flat({ P!HandlePromiseSettle(base, q, t) : q \in Rs })
+                    BY <1>2, <2>1, <2>2, <2>5, SameCreate, SameSettle
+                       DEF a, old, Rs, P!HandleTaskFence
+                <4>5. Plant(base, o, cc.doc) \in a
+                    BY <4>3, <4>4
+                <4>6. QED
+                    BY <3>2, <4>5 DEF cc
+            <3>8. QED
+                BY <3>6, <3>7
+        <2>6. QED
+            BY <2>3, <2>4, <2>5, FenceKind DEF nested
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
 =============================================================================
