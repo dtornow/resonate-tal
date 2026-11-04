@@ -692,4 +692,158 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2 DEF c, a
 
+(* A halt of this origin's id, planted into the store, is the store the
+   abstract halt returns. *)
+LEMMA HaltLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskHalt(req, doc, t)
+                a == P!HandleTaskHalt(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandleTaskHalt(req, doc, t)
+    <1> DEFINE a == P!HandleTaskHalt(base, req, t)
+    <1> DEFINE id == req.id
+    <1>1. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandleTaskHalt, P!HandleTaskHalt
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. CASE old.task.state \in {"none", "fulfilled", "halted"}
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3 DEF c, a, old, id,
+                       HandleTaskHalt, P!HandleTaskHalt
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE old.task.state \notin {"none", "fulfilled", "halted"}
+            <3> DEFINE nw ==
+                    [old EXCEPT !.task.state          = "halted",
+                                !.task.pid            = NoPid,
+                                !.task.ttl            = NoTime,
+                                !.task.leaseTimeoutAt = NoTime,
+                                !.task.retryTimeoutAt = NoTime]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. nw = [old EXCEPT !.task.state          = "halted",
+                                   !.task.pid            = NoPid,
+                                   !.task.ttl            = P!NoTime,
+                                   !.task.leaseTimeoutAt = P!NoTime,
+                                   !.task.retryTimeoutAt = P!NoTime]
+                BY <3>1 DEF nw
+            <3>3. c.doc = Write(doc, id, nw)
+                BY <1>2, <2>4 DEF c, old, nw, id, HandleTaskHalt
+            <3>4. a = {P!Write(base, id, nw)}
+                BY <2>1, <2>2, <2>4, <3>2 DEF a, old, nw, id, P!HandleTaskHalt
+            <3>5. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>6. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>7. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>4, <3>5, <3>6
+            <3>8. QED
+                BY <3>7
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
+(* A continue of this origin's id, planted into the store, is the store the
+   abstract continue returns. *)
+LEMMA ContinueLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandleTaskContinue(req, doc, t)
+                a == P!HandleTaskContinue(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandleTaskContinue(req, doc, t)
+    <1> DEFINE a == P!HandleTaskContinue(base, req, t)
+    <1> DEFINE id == req.id
+    <1>1. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandleTaskContinue, P!HandleTaskContinue
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. CASE old.task.state /= "halted" \/ old.promise.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3 DEF c, a, old, id,
+                       HandleTaskContinue, P!HandleTaskContinue
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>4. CASE old.task.state = "halted" /\ old.promise.state = "pending"
+            <3> DEFINE nw ==
+                    [old EXCEPT !.task.state          = "pending",
+                                !.task.pid            = NoPid,
+                                !.task.ttl            = NoTime,
+                                !.task.leaseTimeoutAt = NoTime,
+                                !.task.retryTimeoutAt = t]
+            <3>1. NoTime = P!NoTime
+                BY DEF NoTime, P!NoTime
+            <3>2. nw = [old EXCEPT !.task.state          = "pending",
+                                   !.task.pid            = NoPid,
+                                   !.task.ttl            = P!NoTime,
+                                   !.task.leaseTimeoutAt = P!NoTime,
+                                   !.task.retryTimeoutAt = t]
+                BY <3>1 DEF nw
+            <3>3. c.doc = Write(doc, id, nw)
+                BY <1>2, <2>4 DEF c, old, nw, id, HandleTaskContinue
+            <3>4. a = {P!Write(base, id, nw)}
+                BY <2>1, <2>2, <2>4, <3>2 DEF a, old, nw, id, P!HandleTaskContinue
+            <3>5. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>6. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>7. a = {Plant(base, o, c.doc)}
+                BY <3>3, <3>4, <3>5, <3>6
+            <3>8. QED
+                BY <3>7
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
 =============================================================================
