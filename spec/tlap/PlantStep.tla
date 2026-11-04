@@ -351,4 +351,174 @@ PROOF
     <1>3. QED
         BY <1>1, <1>2 DEF c, a
 
+(* A listener on this origin's awaited id, planted into the store, is the
+   store the abstract listener returns. *)
+LEMMA ListenerLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandlePromiseRegisterListener(req, doc, t)
+                a == P!HandlePromiseRegisterListener(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterListener(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterListener(base, req, t)
+    <1> DEFINE id == req.awaited
+    <1>1. CASE id \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base
+            BY <1>1, Zenon DEF id
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, HandlePromiseRegisterListener,
+                   P!HandlePromiseRegisterListener
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ base[id] = doc[id] /\ id.origin = o
+            BY <1>2, Zenon DEF id
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE old == Project(doc[id], t)
+        <2>3. IsExternal(old.promise) <=> P!IsExternal(old.promise)
+            BY DEF IsExternal, P!IsExternal, old
+        <2>4. CASE ~IsExternal(old.promise)
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3, <2>4 DEF c, a, old, id,
+                       HandlePromiseRegisterListener, P!HandlePromiseRegisterListener
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>5. CASE old.promise.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>5 DEF c, a, old, id,
+                       HandlePromiseRegisterListener, P!HandlePromiseRegisterListener
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>6. CASE IsExternal(old.promise) /\ old.promise.state = "pending"
+            <3> DEFINE nw == [old EXCEPT !.promise.listeners = @ \cup {req.address}]
+            <3>1. c.doc = Write(doc, id, nw)
+                BY <1>2, <2>6 DEF c, old, nw, id, HandlePromiseRegisterListener
+            <3>2. a = {P!Write(base, id, nw)}
+                BY <2>1, <2>2, <2>3, <2>6, Isa DEF a, old, nw, id,
+                       P!HandlePromiseRegisterListener, IsExternal, P!IsExternal
+            <3>3. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>4. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>5. a = {Plant(base, o, c.doc)}
+                BY <3>1, <3>2, <3>3, <3>4
+            <3>6. QED
+                BY <3>5
+        <2>7. QED
+            BY <2>4, <2>5, <2>6
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
+(* A callback whose awaited and awaiter are both this origin, planted into
+   the store, is the store the abstract callback returns. *)
+LEMMA CallbackLift ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           req.awaiter.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ]
+    PROVE  LET c == HandlePromiseRegisterCallback(req, doc, t)
+                a == P!HandlePromiseRegisterCallback(base, req, t)
+            IN  IF a = {} THEN c.doc = doc
+                ELSE a = {Plant(base, o, c.doc)}
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterCallback(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterCallback(base, req, t)
+    <1> DEFINE id == req.awaited
+    <1> DEFINE who == req.awaiter
+    <1>1. CASE id \notin DOMAIN doc \/ who \notin DOMAIN doc
+        <2>1. id \notin DOMAIN base \/ who \notin DOMAIN base
+            BY <1>1, Zenon DEF id, who
+        <2>2. c = Skip(doc) /\ a = {}
+            BY <1>1, <2>1 DEF c, a, id, who, HandlePromiseRegisterCallback,
+                   P!HandlePromiseRegisterCallback
+        <2>3. QED
+            BY <2>2 DEF Skip
+    <1>2. CASE id \in DOMAIN doc /\ who \in DOMAIN doc
+        <2>1. id \in DOMAIN base /\ who \in DOMAIN base
+              /\ base[id] = doc[id] /\ base[who] = doc[who]
+              /\ id.origin = o
+            BY <1>2, Zenon DEF id, who
+        <2>2. Project(doc[id], t) = P!Project(base[id], t)
+              /\ Project(doc[who], t) = P!Project(base[who], t)
+            BY <2>1, Isa DEF Project, P!Project, NoTime, P!NoTime, NoTask, P!NoTask
+        <2> DEFINE awaited == Project(doc[id], t)
+        <2> DEFINE awaiter == Project(doc[who], t)
+        <2>3. IsExternal(awaited.promise) <=> P!IsExternal(awaited.promise)
+            BY DEF IsExternal, P!IsExternal, awaited
+        <2>4. CASE ~awaiter.promise.tags.targeted
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>4 DEF c, a, awaited, awaiter, id, who,
+                       HandlePromiseRegisterCallback, P!HandlePromiseRegisterCallback
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>5. CASE ~IsExternal(awaited.promise)
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>3, <2>5 DEF c, a, awaited, awaiter, id, who,
+                       HandlePromiseRegisterCallback, P!HandlePromiseRegisterCallback
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>6. CASE awaited.promise.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>6 DEF c, a, awaited, awaiter, id, who,
+                       HandlePromiseRegisterCallback, P!HandlePromiseRegisterCallback
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>7. CASE awaiter.promise.state /= "pending"
+            <3>1. c = Skip(doc) /\ a = {}
+                BY <1>2, <2>1, <2>2, <2>7 DEF c, a, awaited, awaiter, id, who,
+                       HandlePromiseRegisterCallback, P!HandlePromiseRegisterCallback
+            <3>2. QED
+                BY <3>1 DEF Skip
+        <2>8. CASE awaiter.promise.tags.targeted
+                 /\ IsExternal(awaited.promise)
+                 /\ awaited.promise.state = "pending"
+                 /\ awaiter.promise.state = "pending"
+            <3> DEFINE nw == [awaited EXCEPT !.promise.callbacks = @ \cup {who}]
+            <3>1. c.doc = Write(doc, id, nw)
+                BY <1>2, <2>8 DEF c, awaited, awaiter, nw, id, who,
+                       HandlePromiseRegisterCallback
+            <3>2. a = {P!Write(base, id, nw)}
+                BY <2>1, <2>2, <2>3, <2>8, Isa DEF a, awaited, awaiter, nw, id, who,
+                       P!HandlePromiseRegisterCallback, IsExternal, P!IsExternal
+            <3>3. Plant(base, o, Write(doc, id, nw)) = Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw, ii.origin = o
+                      PROVE  Plant(base, o, Write(doc, ii, obj)) = Write(base, ii, obj)
+                    BY <4>1, PlantWrite
+                <4>2. QED
+                    BY <2>1, <4>1, Zenon DEF id
+            <3>4. Write(base, id, nw) = P!Write(base, id, nw)
+                <4>1. ASSUME NEW ii, NEW obj,
+                             ii = id, obj = nw
+                      PROVE  Write(base, ii, obj) = P!Write(base, ii, obj)
+                    BY <4>1 DEF Write, P!Write
+                <4>2. QED
+                    BY <4>1, Zenon DEF id
+            <3>5. a = {Plant(base, o, c.doc)}
+                BY <3>1, <3>2, <3>3, <3>4
+            <3>6. QED
+                BY <3>5
+        <2>9. QED
+            BY <2>4, <2>5, <2>6, <2>7, <2>8
+    <1>3. QED
+        BY <1>1, <1>2 DEF c, a
+
 =============================================================================
