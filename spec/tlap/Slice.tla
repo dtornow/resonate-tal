@@ -5359,4 +5359,195 @@ PROOF
         BY <1>34 DEF S, imB, imD, pairs, mid, docL, calls, cbB, cbD,
                      exp, ldB, ldD, rset
 
+(* One origin's sweep is one bounded abstract sweep of the whole store.
+   The planted document is the retry image RetryJoin reaches, and the
+   five due sets still fit in MaxSweep. *)
+LEMMA SweepReach ==
+    ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box,
+           DOMAIN base \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           base = [ i \in DOMAIN base |-> base[i] ],
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A y \in [id : DOMAIN doc, awaiter : Id] :
+               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending"
+    PROVE  LET S ==
+                { i \in DOMAIN doc :
+                    doc[i].promise.state = "pending"
+                    /\ doc[i].promise.timeoutAt <= t }
+                imB == Image(base, S, t)
+                imD == Image(doc, S, t)
+                pairs == DueN(imD, t)
+                mid == ImgN(imB, pairs)
+                docL == ImgN(imD, pairs)
+                calls == DueC(docL, t)
+                cbB == ImgC(mid, calls, t)
+                cbD == ImgC(docL, calls, t)
+                exp ==
+                    { i \in DOMAIN cbD :
+                        cbD[i].task.state = "acquired"
+                        /\ cbD[i].task.leaseTimeoutAt <= t }
+                ldB == ImgL(cbB, exp, t)
+                ldD == ImgL(cbD, exp, t)
+                rset ==
+                    { j \in DOMAIN ldD :
+                        ldD[j].task.state = "pending"
+                        /\ ldD[j].task.retryTimeoutAt <= t }
+                n == Cardinality(S) + Cardinality(pairs)
+                       + Cardinality(calls) + Cardinality(exp)
+                       + Cardinality(rset)
+            IN  /\ ReachN(base, box, t,
+                          Plant(base, o, Sweep(doc, t).doc),
+                          BoxAt(BoxN(box, imB, pairs, t), ldB, rset),
+                          n)
+                /\ n \in 0 .. P!MaxSweep
+PROOF
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1> DEFINE imB == Image(base, S, t)
+    <1> DEFINE imD == Image(doc, S, t)
+    <1> DEFINE pairs == DueN(imD, t)
+    <1> DEFINE mid == ImgN(imB, pairs)
+    <1> DEFINE docL == ImgN(imD, pairs)
+    <1> DEFINE calls == DueC(docL, t)
+    <1> DEFINE cbB == ImgC(mid, calls, t)
+    <1> DEFINE cbD == ImgC(docL, calls, t)
+    <1> DEFINE exp ==
+            { i \in DOMAIN cbD :
+                cbD[i].task.state = "acquired"
+                /\ cbD[i].task.leaseTimeoutAt <= t }
+    <1> DEFINE ldB == ImgL(cbB, exp, t)
+    <1> DEFINE ldD == ImgL(cbD, exp, t)
+    <1> DEFINE rset ==
+            { j \in DOMAIN ldD :
+                ldD[j].task.state = "pending"
+                /\ ldD[j].task.retryTimeoutAt <= t }
+    <1> DEFINE n ==
+            Cardinality(S) + Cardinality(pairs) + Cardinality(calls)
+              + Cardinality(exp) + Cardinality(rset)
+    <1>1. S = { i \in DOMAIN doc :
+                  doc[i].promise.state = "pending"
+                  /\ doc[i].promise.timeoutAt <= t }
+        BY DEF S
+    <1>2. LET S ==
+                { i \in DOMAIN doc :
+                    doc[i].promise.state = "pending"
+                    /\ doc[i].promise.timeoutAt <= t }
+              imB == Image(base, S, t)
+              imD == Image(doc, S, t)
+              pairs == DueN(imD, t)
+              mid == ImgN(imB, pairs)
+              docL == ImgN(imD, pairs)
+              calls == DueC(docL, t)
+              cbB == ImgC(mid, calls, t)
+              cbD == ImgC(docL, calls, t)
+              exp ==
+                { i \in DOMAIN cbD :
+                    cbD[i].task.state = "acquired"
+                    /\ cbD[i].task.leaseTimeoutAt <= t }
+              ldB == ImgL(cbB, exp, t)
+              ldD == ImgL(cbD, exp, t)
+              rset ==
+                { j \in DOMAIN ldD :
+                    ldD[j].task.state = "pending"
+                    /\ ldD[j].task.retryTimeoutAt <= t }
+          IN  Plant(base, o, Sweep(doc, t).doc) = ImgR(ldB, rset, t)
+        BY PlantOff
+    <1>3. Plant(base, o, Sweep(doc, t).doc) = ImgR(ldB, rset, t)
+        BY <1>2 DEF S, imB, imD, pairs, mid, docL, calls, cbB, cbD,
+                    exp, ldB, ldD, rset
+    <1>4. ReachN(base, box, t,
+                 ImgR(ldB, rset, t),
+                 BoxAt(BoxN(box, imB, pairs, t), ldB, rset),
+                 n)
+        BY <1>1, RetryJoin, Isa DEF S, imB, imD, pairs, mid, docL, calls,
+                                  cbB, cbD, exp, ldB, ldD, rset, n
+    <1>5. ReachN(base, box, t,
+                 Plant(base, o, Sweep(doc, t).doc),
+                 BoxAt(BoxN(box, imB, pairs, t), ldB, rset),
+                 n)
+        BY <1>3, <1>4, Zenon
+    <1>6. DOMAIN doc \subseteq DOMAIN base /\ DOMAIN doc \subseteq Id
+        BY Zenon
+    <1>7. S \subseteq DOMAIN doc
+        BY DEF S
+    <1>8. S \subseteq DOMAIN base
+        BY <1>6, <1>7, Zenon
+    <1>9. S \subseteq Id
+        BY <1>6, <1>7, Zenon
+    <1>10. DOMAIN imD = DOMAIN doc /\ DOMAIN imB = DOMAIN base
+        BY <1>7, <1>8, ImageDom DEF imD, imB
+    <1>11. pairs \subseteq [id : DOMAIN imD, address : Address]
+        BY DueNIn DEF pairs
+    <1>12. pairs \subseteq [id : Id, address : Address]
+        <2>1. DOMAIN imD \subseteq Id
+            BY <1>6, <1>10, Zenon
+        <2>2. ASSUME NEW p \in pairs
+              PROVE  p \in [id : Id, address : Address]
+            <3>1. p \in [id : DOMAIN imD, address : Address]
+                BY <1>11, <2>2
+            <3>2. p.id \in DOMAIN imD /\ p.address \in Address
+                BY <3>1, Z3
+            <3>3. p.id \in Id
+                BY <2>1, <3>2, Zenon
+            <3>4. p = [id |-> p.id, address |-> p.address]
+                BY <3>1, RecPair
+            <3>5. QED
+                BY <3>2, <3>3, <3>4, Z3
+        <2>3. QED
+            BY <2>2
+    <1>13. DOMAIN docL = DOMAIN imD /\ DOMAIN mid = DOMAIN imB
+        BY DomImgN DEF docL, mid, imD, imB, pairs
+    <1>14. DOMAIN docL \subseteq Id
+        BY <1>6, <1>10, <1>13, Zenon
+    <1>15. calls \subseteq [id : DOMAIN docL, awaiter : Id]
+        BY AwSub DEF calls
+    <1>16. calls \subseteq [id : Id, awaiter : Id]
+        <2>1. ASSUME NEW p \in calls
+              PROVE  p \in [id : Id, awaiter : Id]
+            <3>1. p \in [id : DOMAIN docL, awaiter : Id]
+                BY <1>15, <2>1
+            <3>2. p.id \in DOMAIN docL /\ p.awaiter \in Id
+                BY <3>1, Z3
+            <3>3. p.id \in Id
+                BY <1>14, <3>2, Zenon
+            <3>4. p = [id |-> p.id, awaiter |-> p.awaiter]
+                BY <3>1, RecAw
+            <3>5. QED
+                BY <3>2, <3>3, <3>4, Z3
+        <2>2. QED
+            BY <2>1
+    <1>17. DOMAIN cbD = DOMAIN docL /\ DOMAIN cbB = DOMAIN mid
+        BY DomImgC DEF cbD, cbB, docL, mid, calls
+    <1>18. exp \subseteq DOMAIN cbD
+        BY DEF exp
+    <1>19. exp \subseteq Id
+        BY <1>14, <1>17, <1>18, Zenon
+    <1>20. DOMAIN ldD = DOMAIN cbD /\ DOMAIN ldB = DOMAIN cbB
+        BY DomImgL DEF ldD, ldB, cbD, cbB, exp
+    <1>21. rset \subseteq DOMAIN ldD
+        BY DEF rset
+    <1>22. rset \subseteq Id
+        BY <1>14, <1>17, <1>20, <1>21, Zenon
+    <1>23. n \in 0 .. P!MaxSweep
+        BY <1>9, <1>12, <1>16, <1>19, <1>22, SweepBudget DEF n
+    <1>24. QED
+        BY <1>5, <1>23 DEF S, imB, imD, pairs, mid, docL, calls, cbB, cbD,
+                            exp, ldB, ldD, rset, n
+
 ===============================================================================
