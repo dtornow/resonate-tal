@@ -157,4 +157,60 @@ PROOF
     <1>21. QED
         BY <1>19, Z3
 
+(* The perform write posts the sweep sends with an empty tail. Once the
+   compared document's domain sits inside Id, that tail drops, so the
+   outbox written is the outbox of the swept store. *)
+LEMMA SweptBox ==
+    ASSUME NEW o, NEW doc, NEW t, NEW sent,
+           DOMAIN Objects \subseteq Id,
+           DOMAIN doc = { i \in DOMAIN Objects : i.origin = o },
+           \A i \in DOMAIN doc : Objects[i] = doc[i],
+           \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
+           \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
+           \A k \in DOMAIN doc :
+               \A a \in doc[k].promise.callbacks :
+                   a \in DOMAIN Objects => a \in DOMAIN doc,
+           t /= NoTime,
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "acquired" =>
+                   /\ doc[k].task.leaseTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "pending" =>
+                   /\ doc[k].task.retryTimeoutAt /= NoTime
+                   /\ doc[k].promise.state = "pending",
+           \A k \in DOMAIN doc :
+               doc[k].task.state = "suspended" =>
+                   doc[k].promise.state = "pending",
+           sent = Sweep(doc, t).sends \o << >>,
+           outbox' = Deliver(outbox, sent),
+           now' = now
+    PROVE  LET pre == Store(Plant(Objects, o, Sweep(doc, t).doc),
+                            Deliver(outbox, Sweep(doc, t).sends))
+            IN  /\ pre \in P!Swept(t)
+                /\ outbox' = pre.outbox
+                /\ now' = now
+PROOF
+    <1> DEFINE pre ==
+            Store(Plant(Objects, o, Sweep(doc, t).doc),
+                  Deliver(outbox, Sweep(doc, t).sends))
+    <1>1. DOMAIN doc \subseteq Id
+        BY Z3
+    <1>2. Deliver(outbox, Sweep(doc, t).sends \o << >>)
+            = Deliver(outbox, Sweep(doc, t).sends)
+        BY ONLY <1>1, DropTail, Isa
+    <1>3. sent = Sweep(doc, t).sends \o << >>
+        OBVIOUS
+    <1>4. Deliver(outbox, sent) = Deliver(outbox, Sweep(doc, t).sends)
+        BY ONLY <1>2, <1>3, Isa
+    <1>5. pre \in P!Swept(t)
+        BY SliceSweep, Isa DEF pre
+    <1>6. HIDE DEF Sweep, Plant, Deliver
+    <1>7. pre.outbox = Deliver(outbox, Sweep(doc, t).sends)
+        BY ONLY Z3 DEF pre, Store
+    <1>8. outbox' = pre.outbox
+        BY <1>4, <1>7, Z3
+    <1>9. QED
+        BY <1>5, <1>8, Z3 DEF pre
+
 =============================================================================
