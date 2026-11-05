@@ -1591,4 +1591,233 @@ PROOF
     <1>3. QED
         BY ONLY <1>1, <1>2, Z3
 
+LEMMA MemComp ==
+    ASSUME NEW S, NEW P(_), NEW i
+    PROVE  i \in {x \in S : P(x)} <=> (i \in S /\ P(i))
+PROOF
+    BY Isa
+
+LeaseAt(obj, at) ==
+    [obj EXCEPT !.task.leaseTimeoutAt = at]
+
+LEMMA LeaseFields ==
+    ASSUME NEW obj, NEW at
+    PROVE  /\ LeaseAt(obj, at).promise = obj.promise
+           /\ LeaseAt(obj, at).task.state = obj.task.state
+           /\ LeaseAt(obj, at).task.ttl = obj.task.ttl
+           /\ LeaseAt(obj, at).task.leaseTimeoutAt = at
+PROOF
+    <1> DEFINE k1 == [obj.task EXCEPT !.leaseTimeoutAt = at]
+    <1> DEFINE nw == [obj EXCEPT !.task = k1]
+    <1>1. k1.leaseTimeoutAt = at /\ k1.state = obj.task.state
+          /\ k1.ttl = obj.task.ttl
+        BY ONLY Z3 DEF k1
+    <1>2. nw.task = k1 /\ nw.promise = obj.promise
+        BY ONLY Z3 DEF nw
+    <1>3. LeaseAt(obj, at) = nw
+        BY Zenon DEF LeaseAt, k1, nw
+    <1>4. nw.task.state = k1.state /\ nw.task.ttl = k1.ttl
+          /\ nw.task.leaseTimeoutAt = k1.leaseTimeoutAt
+          /\ nw.promise = obj.promise
+        BY ONLY <1>2, Isa
+    <1>5. QED
+        BY ONLY <1>1, <1>3, <1>4, Z3
+
+LEMMA LeaseGuard ==
+    ASSUME NEW obj, NEW t \in Nat,
+           obj.task.state = "acquired",
+           obj.promise.state = "pending",
+           obj.task.ttl \in Ttl,
+           obj.promise.listeners \subseteq Address
+    PROVE  Guard(LeaseAt(obj, t + obj.task.ttl))
+           /\ LeaseAt(obj, t + obj.task.ttl).promise.callbacks
+                = obj.promise.callbacks
+PROOF
+    <1> DEFINE nw == LeaseAt(obj, t + obj.task.ttl)
+    <1>1. obj.task.state = "acquired" /\ obj.promise.state = "pending"
+          /\ obj.task.ttl \in Ttl
+          /\ obj.promise.listeners \subseteq Address
+        BY Z3
+    <1>2. nw.promise = obj.promise /\ nw.task.state = obj.task.state
+          /\ nw.task.ttl = obj.task.ttl
+          /\ nw.task.leaseTimeoutAt = t + obj.task.ttl
+        BY ONLY LeaseFields DEF nw
+    <1>3. nw.promise.state = obj.promise.state
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.callbacks = obj.promise.callbacks
+        BY ONLY <1>2, Isa
+    <1>4. nw.task.state = "acquired" /\ nw.task.ttl \in Ttl
+          /\ nw.promise.state = "pending"
+          /\ nw.promise.listeners \subseteq Address
+          /\ nw.task.leaseTimeoutAt = t + obj.task.ttl
+        BY ONLY <1>1, <1>2, <1>3, Z3
+    <1>5. t + obj.task.ttl /= NoTime
+        BY ONLY <1>1, LeaseTime, Z3
+    <1>6. Guard(nw)
+        BY ONLY <1>4, <1>5, Z3 DEF Guard
+    <1>7. QED
+        BY ONLY <1>3, <1>6, Z3
+
+LEMMA BeatOk ==
+    ASSUME NEW req, NEW doc, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(HandleTaskHeartbeat(req, doc, t).doc)
+           /\ Home(HandleTaskHeartbeat(req, doc, t).doc, o)
+PROOF
+    <1>1. HIDE DEF SetToSeq
+    <1> DEFINE beat ==
+            { i \in DOMAIN doc :
+                LET old == Project(doc[i], t)
+                IN  /\ \E rf \in req.tasks :
+                          rf.id = i /\ rf.version = old.task.version
+                    /\ old.task.state = "acquired"
+                    /\ old.task.pid = req.pid
+                    /\ old.promise.state = "pending" }
+    <1> DEFINE flat ==
+            { i \in DOMAIN doc :
+                /\ \E rf \in req.tasks :
+                      rf.id = i
+                      /\ rf.version = Project(doc[i], t).task.version
+                /\ Project(doc[i], t).task.state = "acquired"
+                /\ Project(doc[i], t).task.pid = req.pid
+                /\ Project(doc[i], t).promise.state = "pending" }
+    <1>2. beat = flat
+        BY Z3 DEF beat, flat
+    <1>3. CASE beat = {}
+        <2>1. HandleTaskHeartbeat(req, doc, t) =
+                LET beat ==
+                        { i \in DOMAIN doc :
+                            LET old == Project(doc[i], t)
+                            IN  /\ \E rf \in req.tasks :
+                                      rf.id = i /\ rf.version = old.task.version
+                                /\ old.task.state = "acquired"
+                                /\ old.task.pid = req.pid
+                                /\ old.promise.state = "pending" }
+                    q == SetToSeq({ i \in beat :
+                                      t + doc[i].task.ttl
+                                          /= doc[i].task.leaseTimeoutAt })
+                IN IF beat = {} THEN Skip(doc)
+                   ELSE [ doc |->
+                            [ i \in DOMAIN doc |->
+                                IF i \in beat THEN
+                                    LET old == Project(doc[i], t)
+                                    IN [old EXCEPT !.task.leaseTimeoutAt =
+                                                      t + old.task.ttl]
+                                ELSE doc[i] ],
+                          puts |->
+                            [ n \in 1 .. Len(q) |->
+                                [at |-> t + doc[q[n]].task.ttl,
+                                 id |-> q[n], kind |-> "lease"] ],
+                          dels |->
+                            [ n \in 1 .. Len(q) |->
+                                [at |-> doc[q[n]].task.leaseTimeoutAt,
+                                 id |-> q[n], kind |-> "lease"] ],
+                          sends |-> << >> ]
+            BY ONLY DEF HandleTaskHeartbeat
+        <2>2. HandleTaskHeartbeat(req, doc, t).doc = doc
+            BY <1>3, <2>1, Isa DEF beat, Skip
+        <2>3. DocOk(doc) /\ Home(doc, o)
+            BY Z3 DEF DocOk, Home
+        <2>4. QED
+            BY <2>2, <2>3, Isa
+    <1>4. CASE beat /= {}
+        <2> DEFINE img ==
+                [ i \in DOMAIN doc |->
+                    IF i \in beat THEN
+                        LET old == Project(doc[i], t)
+                        IN  [old EXCEPT !.task.leaseTimeoutAt =
+                                            t + old.task.ttl]
+                    ELSE
+                        doc[i] ]
+        <2>1. HandleTaskHeartbeat(req, doc, t).doc = img
+            BY ONLY <1>4, Z3 DEF HandleTaskHeartbeat, beat, img
+        <2>2. DOMAIN img = DOMAIN doc
+            BY DomCtor, Isa DEF img
+        <2>3. ASSUME NEW i \in DOMAIN doc
+              PROVE  img[i].promise.callbacks \subseteq DOMAIN doc
+                     /\ Guard(img[i])
+            <3>1. img[i] =
+                    IF i \in beat THEN
+                        LET old == Project(doc[i], t)
+                        IN  [old EXCEPT !.task.leaseTimeoutAt =
+                                            t + old.task.ttl]
+                    ELSE
+                        doc[i]
+                BY AppCtor, Isa DEF img
+            <3>2. CASE i \notin beat
+                <4>1. img[i] = doc[i]
+                    BY ONLY <3>1, <3>2, Z3
+                <4>2. doc[i].promise.callbacks \subseteq DOMAIN doc
+                      /\ Guard(doc[i])
+                    BY Isa DEF DocOk
+                <4>3. img[i].promise.callbacks = doc[i].promise.callbacks
+                      /\ (Guard(img[i]) <=> Guard(doc[i]))
+                    BY ONLY <4>1, Isa
+                <4>4. QED
+                    BY ONLY <4>2, <4>3, Z3
+            <3>3. CASE i \in beat
+                <4> DEFINE old == Project(doc[i], t)
+                <4> DEFINE nw == LeaseAt(doc[i], t + doc[i].task.ttl)
+                <4>1. i \in flat
+                    BY ONLY <1>2, <3>3, Z3 DEF beat
+                <4>2. i \in DOMAIN doc
+                      /\ old.task.state = "acquired"
+                      /\ old.task.pid = req.pid
+                      /\ old.promise.state = "pending"
+                    BY <4>1, MemComp, Isa DEF flat, old
+                <4>3. Project(doc[i], t) = doc[i]
+                    <5>1. CASE doc[i].promise.state = "pending"
+                             /\ doc[i].promise.timeoutAt <= t
+                        <6>1. old.task.state \in {"none", "fulfilled"}
+                            BY ONLY <5>1, ProjFields, Z3 DEF old
+                        <6>2. QED
+                            BY ONLY <4>2, <6>1, Z3
+                    <5>2. CASE doc[i].promise.state /= "pending"
+                             \/ ~(doc[i].promise.timeoutAt <= t)
+                        BY ONLY <5>2, ProjId, Z3 DEF old
+                    <5>3. QED
+                        BY ONLY <5>1, <5>2, Z3
+                <4>4. old = doc[i]
+                    BY ONLY <4>3, Z3 DEF old
+                <4>5. Guard(doc[i])
+                      /\ doc[i].promise.callbacks \subseteq DOMAIN doc
+                    BY Isa DEF DocOk
+                <4>6. doc[i].task.state = "acquired"
+                      /\ doc[i].promise.state = "pending"
+                      /\ doc[i].task.ttl \in Ttl
+                      /\ doc[i].promise.listeners \subseteq Address
+                    BY ONLY <4>2, <4>4, <4>5, Z3 DEF Guard
+                <4>7. Guard(nw)
+                      /\ nw.promise.callbacks = doc[i].promise.callbacks
+                    BY <4>6, LeaseGuard, Isa DEF nw
+                <4>8. img[i] = nw
+                    <5> DEFINE touched ==
+                            [old EXCEPT !.task.leaseTimeoutAt = t + old.task.ttl]
+                    <5> DEFINE raw ==
+                            [doc[i] EXCEPT !.task.leaseTimeoutAt =
+                                              t + doc[i].task.ttl]
+                    <5>1. img[i] = touched
+                        BY ONLY <3>1, <3>3, Z3 DEF touched, old
+                    <5>2. touched = raw
+                        BY ONLY <4>4, Isa DEF touched, raw, old
+                    <5>3. raw = nw
+                        BY Zenon DEF raw, nw, LeaseAt
+                    <5>4. QED
+                        BY ONLY <5>1, <5>2, <5>3, Z3
+                <4>9. img[i].promise.callbacks = nw.promise.callbacks
+                      /\ (Guard(img[i]) <=> Guard(nw))
+                    BY ONLY <4>8, Isa
+                <4>10. QED
+                    BY ONLY <4>5, <4>7, <4>9, Z3
+            <3>4. QED
+                BY ONLY <3>2, <3>3, Z3
+        <2>4. DocOk(img)
+            BY <2>2, <2>3, Isa DEF DocOk
+        <2>5. Home(img, o)
+            BY <2>2, SameHome, Isa
+        <2>6. QED
+            BY ONLY <2>1, <2>4, <2>5, Z3
+    <1>5. QED
+        BY ONLY <1>3, <1>4, Z3
+
 =============================================================================
