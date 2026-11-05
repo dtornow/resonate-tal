@@ -3473,4 +3473,241 @@ PROOF
     <1>15. QED
         BY ONLY <1>12, <1>13, Z3
 
+LEMMA EmptyDoc ==
+    ASSUME NEW o
+    PROVE  DocOk(EmptyFn) /\ Home(EmptyFn, o)
+PROOF
+    <1>1. EmptyFn = << >>
+        BY DEF EmptyFn
+    <1>2. << >> \in Seq(Nat) /\ Len(<< >>) = 0
+        BY EmptySeq, Z3
+    <1>3. DOMAIN << >> = 1 .. Len(<< >>)
+        BY <1>2, LenProperties, Z3
+    <1>4. DOMAIN EmptyFn = {}
+        BY <1>1, <1>2, <1>3, Z3
+    <1>5. QED
+        BY <1>4, Z3 DEF DocOk, Home
+
+LEMMA PlacedInit ==
+    ASSUME Init
+    PROVE  Placed
+PROOF
+    <1>1. docs = [o \in Origin |-> EmptyFn]
+        BY DEF Init
+    <1>2. DOMAIN docs = Origin
+        BY <1>1, DomCtor, Isa
+    <1>3. ASSUME NEW o \in Origin
+          PROVE  DocOk(docs[o]) /\ Home(docs[o], o)
+        <2>1. docs[o] = EmptyFn
+            BY <1>1, <1>3, AppCtor, Isa
+        <2>2. QED
+            BY <2>1, EmptyDoc, Z3
+    <1>4. QED
+        BY <1>2, <1>3, Z3 DEF Placed
+
+LEMMA PlaceStay ==
+    ASSUME Placed, docs' = docs
+    PROVE  Placed'
+PROOF
+    BY Isa DEF Placed
+
+LEMMA ExceptOne ==
+    ASSUME NEW f, NEW k \in DOMAIN f, NEW v, NEW g,
+           g = [f EXCEPT ![k] = v]
+    PROVE  DOMAIN g = DOMAIN f /\ g[k] = v
+           /\ \A q \in DOMAIN f : q # k => g[q] = f[q]
+PROOF
+    <1>1. g = [f EXCEPT ![k] = v]
+        BY Z3
+    <1>2. DOMAIN g = DOMAIN f /\ g[k] = v
+        BY ONLY <1>1, Z3
+    <1>3. ASSUME NEW q \in DOMAIN f, q # k
+          PROVE  g[q] = f[q]
+        BY ONLY <1>1, <1>3, Z3
+    <1>4. QED
+        BY <1>2, <1>3, Z3
+
+LEMMA ReplaceDoc ==
+    ASSUME Placed,
+           NEW o \in Origin, NEW body,
+           DocOk(body), Home(body, o),
+           docs' = [docs EXCEPT ![o] = body]
+    PROVE  Placed'
+PROOF
+    <1>1. DOMAIN docs = Origin
+        BY Z3 DEF Placed
+    <1>2. o \in DOMAIN docs
+        BY <1>1, Z3
+    <1>3. DOMAIN docs' = DOMAIN docs /\ docs'[o] = body
+          /\ \A q \in DOMAIN docs : q # o => docs'[q] = docs[q]
+        BY <1>2, ExceptOne, Z3
+    <1>4. DOMAIN docs' = Origin
+        BY <1>1, <1>3, Z3
+    <1>5. ASSUME NEW q \in Origin
+          PROVE  DocOk(docs'[q]) /\ Home(docs'[q], q)
+        <2>1. CASE q = o
+            BY <1>3, <1>5, <2>1, Z3
+        <2>2. CASE q # o
+            <3>1. docs'[q] = docs[q]
+                BY <1>1, <1>3, <1>5, <2>2, Z3
+            <3>2. DocOk(docs[q]) /\ Home(docs[q], q)
+                BY <1>5, Z3 DEF Placed
+            <3>3. QED
+                BY <3>1, <3>2, Z3
+        <2>3. QED
+            BY <2>1, <2>2, Z3
+    <1>6. QED
+        BY <1>4, <1>5, Z3 DEF Placed
+
+LEMMA SweptHandle ==
+    ASSUME NEW doc, NEW ev, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o),
+           ev \in Event, ev.tag \in HandleTag, OriginOf(ev) = o
+    PROVE  DocOk(Handle(ev, Sweep(doc, t).doc, t).doc)
+           /\ Home(Handle(ev, Sweep(doc, t).doc, t).doc, o)
+PROOF
+    <1>1. DocOk(Sweep(doc, t).doc) /\ Home(Sweep(doc, t).doc, o)
+        BY SweepOk, Z3
+    <1>2. QED
+        BY <1>1, HandleOk, Z3
+
+LEMMA PutWrite ==
+    ASSUME NEW r \in DOMAIN steps, PerformPut(r),
+           NEW e, NEW o,
+           e = Head(steps[r].pending),
+           o = OriginOf(steps[r].ev)
+    PROVE  docs' = [docs EXCEPT ![o] = e.body]
+           /\ docs[o] = steps[r].expect
+           /\ now' = now
+           /\ e.tag = "PutDocument"
+PROOF
+    BY Z3 DEF PerformPut
+
+LEMMA PutKeeps ==
+    ASSUME Placed, now \in Nat,
+           NEW r \in DOMAIN steps, PerformPut(r),
+           steps[r].at \in 0 .. now,
+           steps[r].ev \in Event,
+           steps[r].ev.tag \in HandleTag,
+           NEW e, NEW o,
+           e = Head(steps[r].pending),
+           o = OriginOf(steps[r].ev),
+           o \in Origin,
+           e.body = Handle(steps[r].ev,
+                           Sweep(steps[r].expect, steps[r].at).doc,
+                           steps[r].at).doc
+    PROVE  Placed'
+PROOF
+    <1>1. docs' = [docs EXCEPT ![o] = e.body]
+          /\ docs[o] = steps[r].expect
+        BY PutWrite, Z3
+    <1>2. steps[r].at \in Nat
+        BY AtNat, Z3
+    <1>3. DocOk(docs[o]) /\ Home(docs[o], o)
+        BY Z3 DEF Placed
+    <1>4. DocOk(steps[r].expect) /\ Home(steps[r].expect, o)
+        BY <1>1, <1>3, Z3
+    <1>5. DocOk(e.body) /\ Home(e.body, o)
+        BY <1>2, <1>4, SweptHandle, Z3
+    <1>6. HIDE DEF Sweep, Handle, PerformPut
+    <1>7. docs' = [docs EXCEPT ![o] = e.body]
+        BY ONLY <1>1, Z3
+    <1>8. Placed /\ o \in Origin /\ DocOk(e.body) /\ Home(e.body, o)
+        BY <1>5, Z3
+    <1>9. QED
+        BY ONLY <1>7, <1>8, ReplaceDoc, Isa
+
+(* A step that does not land a document leaves every origin document
+   where it is, so the placement invariant is unchanged. *)
+LEMMA DocStay ==
+    ASSUME Next,
+           \A r \in DOMAIN steps : ~PerformPut(r)
+    PROVE  docs' = docs
+PROOF
+    <1>1. ASSUME NEW ev \in ExternalEvent, SubmitExternal(ev)
+          PROVE  docs' = docs
+        BY <1>1, Z3 DEF SubmitExternal
+    <1>2. ASSUME NEW e \in timeouts, SubmitInternal(e)
+          PROVE  docs' = docs
+        BY <1>2, Z3 DEF SubmitInternal
+    <1>3. ASSUME NEW r \in DOMAIN steps, Process(r)
+          PROVE  docs' = docs
+        BY <1>3, Isa DEF Process
+    <1>4. ASSUME NEW r \in DOMAIN steps, Crash(r)
+          PROVE  docs' = docs
+        BY <1>4, Z3 DEF Crash
+    <1>5. ASSUME Clock
+          PROVE  docs' = docs
+        BY <1>5, Z3 DEF Clock
+    <1>6. ASSUME NEW r \in DOMAIN steps, PerformDone(r)
+          PROVE  docs' = docs
+        BY <1>6, Z3 DEF PerformDone
+    <1>7. ASSUME NEW r \in DOMAIN steps, PerformPutTimeout(r)
+          PROVE  docs' = docs
+        BY <1>7, Z3 DEF PerformPutTimeout
+    <1>8. ASSUME NEW r \in DOMAIN steps, PerformDelTimeout(r)
+          PROVE  docs' = docs
+        BY <1>8, Z3 DEF PerformDelTimeout
+    <1>9. ASSUME NEW r \in DOMAIN steps, PerformMiss(r)
+          PROVE  docs' = docs
+        BY <1>9, Z3 DEF PerformMiss
+    <1>10. ASSUME NEW r \in DOMAIN steps, PerformPut(r)
+           PROVE  docs' = docs
+        BY <1>10, Z3
+    <1>11. QED
+        <2>1. CASE \E ev \in ExternalEvent : SubmitExternal(ev)
+            <3>1. PICK ev \in ExternalEvent : SubmitExternal(ev)
+                BY <2>1, Z3
+            <3>2. QED
+                BY <3>1, <1>1, Z3
+        <2>2. CASE \E e \in timeouts : SubmitInternal(e)
+            <3>1. PICK e \in timeouts : SubmitInternal(e)
+                BY <2>2, Z3
+            <3>2. QED
+                BY <3>1, <1>2, Z3
+        <2>3. CASE \E r \in DOMAIN steps : Process(r)
+            <3>1. PICK r \in DOMAIN steps : Process(r)
+                BY <2>3, Z3
+            <3>2. QED
+                BY <3>1, <1>3, Z3
+        <2>4. CASE \E r \in DOMAIN steps : Crash(r)
+            <3>1. PICK r \in DOMAIN steps : Crash(r)
+                BY <2>4, Z3
+            <3>2. QED
+                BY <3>1, <1>4, Z3
+        <2>5. CASE Clock
+            BY <2>5, <1>5, Z3
+        <2>6. CASE \E r \in DOMAIN steps : Perform(r)
+            <3>1. PICK r \in DOMAIN steps : Perform(r)
+                BY <2>6, Z3
+            <3>2. CASE PerformDone(r)
+                BY <3>1, <3>2, <1>6, Z3 DEF Perform
+            <3>3. CASE PerformPutTimeout(r)
+                BY <3>1, <3>3, <1>7, Z3 DEF Perform
+            <3>4. CASE PerformDelTimeout(r)
+                BY <3>1, <3>4, <1>8, Z3 DEF Perform
+            <3>5. CASE PerformMiss(r)
+                BY <3>1, <3>5, <1>9, Z3 DEF Perform
+            <3>6. CASE PerformPut(r)
+                BY <3>1, <3>6, <1>10, Z3 DEF Perform
+            <3>7. QED
+                BY <3>1, <3>2, <3>3, <3>4, <3>5, <3>6, Z3 DEF Perform
+        <2>7. QED
+            BY <2>1, <2>2, <2>3, <2>4, <2>5, <2>6, Z3 DEF Next
+
+LEMMA PlaceQuiet ==
+    ASSUME Placed, [Next]_vars,
+           \A r \in DOMAIN steps : ~PerformPut(r)
+    PROVE  Placed'
+PROOF
+    <1>1. docs' = docs
+        <2>1. CASE Next
+            BY <2>1, DocStay, Z3
+        <2>2. CASE UNCHANGED vars
+            BY <2>2, Z3 DEF vars
+        <2>3. QED
+            BY <2>1, <2>2, Z3
+    <1>2. QED
+        BY <1>1, PlaceStay, Z3
+
 =============================================================================
