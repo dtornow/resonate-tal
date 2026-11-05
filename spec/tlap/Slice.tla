@@ -1243,9 +1243,164 @@ PROOF
     <1>6. QED
         BY <1>2, <1>3, <1>4, <1>5, CallOn DEF calls
 
+(* A callback that is actually registered on this document, and that exists
+   in the store, is an id of this document. This is weaker than ranging over
+   every record in [id : DOMAIN doc, awaiter : Id]: that range names ids of
+   other origins even when no callback points at them. *)
+CbLocal(doc, base) ==
+    \A k \in DOMAIN doc :
+        \A a \in doc[k].promise.callbacks :
+            a \in DOMAIN base => a \in DOMAIN doc
+
+LEMMA CallsKept ==
+    ASSUME NEW obj, NEW t
+    PROVE  P!Project(obj, t).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
+        <2> DEFINE p == P!Project(obj, t)
+        <2> DEFINE st == IF obj.promise.tags.timer THEN "resolved"
+                         ELSE "rejectedTimedout"
+        <2> DEFINE p1 == [obj.promise EXCEPT !.state = st]
+        <2> DEFINE p2 == [p1 EXCEPT !.value = NoValue]
+        <2> DEFINE p3 == [p2 EXCEPT !.settledAt = obj.promise.timeoutAt]
+        <2>1. p1.callbacks = obj.promise.callbacks
+            BY ONLY Z3 DEF p1
+        <2>2. p2.callbacks = p1.callbacks /\ p3.callbacks = p2.callbacks
+            BY ONLY Z3 DEF p2, p3
+        <2>3. p.promise = p3
+            BY ONLY <1>1, Zenon DEF p, st, p1, p2, p3, P!Project
+        <2>4. QED
+            BY <2>1, <2>2, <2>3
+    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
+        BY <1>2, ProjectId
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA CbAt ==
+    ASSUME NEW doc, NEW t, NEW S, NEW k,
+           S \subseteq DOMAIN doc,
+           k \in DOMAIN doc
+    PROVE  Image(doc, S, t)[k].promise.callbacks = doc[k].promise.callbacks
+PROOF
+    <1>1. /\ k \in DOMAIN Image(doc, S, t)
+          /\ Image(doc, S, t)[k]
+               = IF k \in S THEN P!Project(doc[k], t) ELSE doc[k]
+        BY ImageVal
+    <1>2. CASE k \in S
+        <2>1. Image(doc, S, t)[k].promise.callbacks
+                = doc[k].promise.callbacks
+            BY <1>1, <1>2, CallsKept
+        <2>2. QED
+            BY <2>1
+    <1>3. CASE k \notin S
+        BY <1>1, <1>3
+    <1>4. QED
+        BY <1>2, <1>3
+
+LEMMA CbN ==
+    ASSUME NEW doc, NEW Q, NEW k,
+           k \in DOMAIN doc
+    PROVE  ImgN(doc, Q)[k].promise.callbacks = doc[k].promise.callbacks
+PROOF
+    <1>1. CASE Q = {}
+        <2>1. ImgN(doc, Q) = doc
+            BY <1>1 DEF ImgN
+        <2>2. QED
+            BY <2>1
+    <1>2. CASE Q # {}
+        <2> DEFINE im == [ j \in DOMAIN doc |-> BodyN(doc, Q, j) ]
+        <2>1. ImgN(doc, Q) = im /\ DOMAIN im = DOMAIN doc
+            BY <1>2, DomCtor DEF ImgN, im
+        <2>2. im[k] = BodyN(doc, Q, k)
+            BY <2>1, Zenon DEF im
+        <2>3. CASE Gone(k, Q) = {}
+            <3>1. BodyN(doc, Q, k)
+                    = (LET g == Gone(k, Q)
+                       IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                BY BodyWhen
+            <3>2. BodyN(doc, Q, k) = doc[k]
+                BY ONLY <2>3, <3>1, Zenon
+            <3>3. QED
+                BY <2>1, <2>2, <3>2
+        <2>4. CASE Gone(k, Q) # {}
+            <3> DEFINE s == Struck(doc[k], Gone(k, Q))
+            <3>1. BodyN(doc, Q, k)
+                    = (LET g == Gone(k, Q)
+                       IN  IF g = {} THEN doc[k] ELSE Struck(doc[k], g))
+                BY BodyWhen
+            <3>2. BodyN(doc, Q, k) = s
+                BY ONLY <2>4, <3>1, Zenon DEF s
+            <3>3. s.promise.callbacks = doc[k].promise.callbacks
+                BY ONLY Zenon DEF s, Struck
+            <3>4. QED
+                BY <2>1, <2>2, <3>2, <3>3
+        <2>5. QED
+            BY <2>3, <2>4
+    <1>3. QED
+        BY <1>1, <1>2
+
+LEMMA CbBoth ==
+    ASSUME NEW doc, NEW t, NEW S, NEW Q,
+           S \subseteq DOMAIN doc
+    PROVE  \A k \in DOMAIN doc :
+              ImgN(Image(doc, S, t), Q)[k].promise.callbacks
+                = doc[k].promise.callbacks
+PROOF
+    <1>1. DOMAIN Image(doc, S, t) = DOMAIN doc
+        BY ImageDom
+    <1>2. ASSUME NEW k \in DOMAIN doc
+          PROVE  ImgN(Image(doc, S, t), Q)[k].promise.callbacks
+                   = doc[k].promise.callbacks
+        <2>1. Image(doc, S, t)[k].promise.callbacks
+                = doc[k].promise.callbacks
+            BY <1>2, CbAt
+        <2>2. ImgN(Image(doc, S, t), Q)[k].promise.callbacks
+                = Image(doc, S, t)[k].promise.callbacks
+            BY <1>1, <1>2, CbN
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>2
+
+LEMMA DueLocal ==
+    ASSUME NEW base, NEW doc, NEW docL, NEW mid, NEW t,
+           DOMAIN docL = DOMAIN doc,
+           DOMAIN mid = DOMAIN base,
+           \A k \in DOMAIN doc :
+               docL[k].promise.callbacks = doc[k].promise.callbacks,
+           CbLocal(doc, base)
+    PROVE  \A y \in DueC(docL, t) :
+               y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+PROOF
+    <1>1. ASSUME NEW y \in DueC(docL, t),
+                 y.awaiter \in DOMAIN mid
+          PROVE  y.awaiter \in DOMAIN docL
+        <2> DEFINE ids ==
+                { q \in DOMAIN docL :
+                    P!Project(docL[q], t).promise.state /= "pending" }
+        <2>1. /\ y \in [id : ids, awaiter : Id]
+              /\ y.awaiter \in docL[y.id].promise.callbacks
+            BY <1>1, InDueC DEF ids
+        <2>2. y.id \in DOMAIN docL
+            BY <2>1, Z3 DEF ids
+        <2>3. y.id \in DOMAIN doc
+            BY <2>2
+        <2>4. docL[y.id].promise.callbacks = doc[y.id].promise.callbacks
+            BY <2>3
+        <2>5. y.awaiter \in doc[y.id].promise.callbacks
+            BY <2>1, <2>4
+        <2>6. y.awaiter \in DOMAIN base
+            BY <1>1
+        <2>7. y.awaiter \in DOMAIN doc
+            BY <2>3, <2>5, <2>6 DEF CbLocal
+        <2>8. QED
+            BY <2>7
+    <1>2. QED
+        BY <1>1
+
 (* Timeouts, listeners, and callbacks of one origin are one chain. The
    callback pass leaves the listener outbox where the listener pass put it.
-   Awaiters that exist are still in the document. *)
+   Awaiters that are registered stay in the document. *)
 LEMMA ThreePass ==
     ASSUME NEW base, NEW o, NEW doc, NEW t, NEW box, NEW S,
            DOMAIN base \subseteq Id,
@@ -1256,8 +1411,7 @@ LEMMA ThreePass ==
                    doc[i].promise.state = "pending"
                    /\ doc[i].promise.timeoutAt <= t },
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+           CbLocal(doc, base)
     PROVE  ReachN(base, box, t,
                   ImgC(ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
                        DueC(ImgN(Image(doc, S, t),
@@ -1354,25 +1508,15 @@ PROOF
             BY <1>8, <2>1, Zenon DEF obj
         <2>3. QED
             BY <2>1, <2>2, StillFixed DEF docL, pairs, obj
-    <1>10. \A y \in [id : DOMAIN docL, awaiter : Id] :
-              y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
-        <2> SUFFICES ASSUME NEW y \in [id : DOMAIN docL, awaiter : Id],
-                            y.awaiter \in DOMAIN mid
-                     PROVE  y.awaiter \in DOMAIN docL
-            OBVIOUS
-        <2>1. DOMAIN docL = DOMAIN doc /\ DOMAIN mid = DOMAIN base
-            BY <1>3, <1>5, Zenon
-        <2>2. y \in [id : DOMAIN doc, awaiter : Id]
-            BY <2>1, Zenon
-        <2>3. y.awaiter \in DOMAIN base
-            BY <2>1, Zenon
-        <2>4. y.awaiter \in DOMAIN doc
-            BY <2>2, <2>3, Zenon
-        <2>5. QED
-            BY <2>1, <2>4, Zenon
+    <1>10. \A k \in DOMAIN doc :
+              docL[k].promise.callbacks = doc[k].promise.callbacks
+        <2>1. S \subseteq DOMAIN doc
+            BY <1>1
+        <2>2. QED
+            BY <2>1, CbBoth DEF docL, imD, pairs
     <1>11. \A y \in calls :
               y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
-        BY <1>10, LocalDue DEF calls, docL, mid
+        BY <1>3, <1>5, <1>10, DueLocal DEF calls, docL, mid, imD, imB
     <1>12. ReachN(mid, boxL, t, ImgC(mid, calls, t), boxL, Cardinality(calls))
         BY <1>6, <1>7, <1>9, <1>11, CallFrom DEF mid, docL, calls, boxL
     <1>13. ReachN(base, box, t, mid, boxL,
@@ -1403,30 +1547,6 @@ PROOF
         BY <1>14, <1>15, Z3
     <1>18. QED
         BY <1>12, <1>13, <1>16, <1>17, ReachCat DEF mid, boxL, calls
-
-LEMMA CallsKept ==
-    ASSUME NEW obj, NEW t
-    PROVE  P!Project(obj, t).promise.callbacks = obj.promise.callbacks
-PROOF
-    <1>1. CASE obj.promise.state = "pending" /\ obj.promise.timeoutAt <= t
-        <2> DEFINE p == P!Project(obj, t)
-        <2> DEFINE st == IF obj.promise.tags.timer THEN "resolved"
-                         ELSE "rejectedTimedout"
-        <2> DEFINE p1 == [obj.promise EXCEPT !.state = st]
-        <2> DEFINE p2 == [p1 EXCEPT !.value = NoValue]
-        <2> DEFINE p3 == [p2 EXCEPT !.settledAt = obj.promise.timeoutAt]
-        <2>1. p1.callbacks = obj.promise.callbacks
-            BY ONLY Z3 DEF p1
-        <2>2. p2.callbacks = p1.callbacks /\ p3.callbacks = p2.callbacks
-            BY ONLY Z3 DEF p2, p3
-        <2>3. p.promise = p3
-            BY ONLY <1>1, Zenon DEF p, st, p1, p2, p3, P!Project
-        <2>4. QED
-            BY <2>1, <2>2, <2>3
-    <1>2. CASE obj.promise.state /= "pending" \/ ~(obj.promise.timeoutAt <= t)
-        BY <1>2, ProjectId
-    <1>3. QED
-        BY <1>1, <1>2
 
 LEMMA CallsOn ==
     ASSUME NEW doc, NEW t, NEW S,
@@ -1497,8 +1617,7 @@ LEMMA CallPlant ==
                    /\ doc[i].promise.timeoutAt <= t },
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+           CbLocal(doc, base)
     PROVE  Plant(ImgN(Image(base, S, t), DueN(Image(doc, S, t), t)),
                  o,
                  SweepCallbacks(ImgN(Image(doc, S, t),
@@ -1593,24 +1712,14 @@ PROOF
         BY AwSub DEF calls, docL
     <1>14. \A y \in calls :
               y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
-        <2>1. \A y \in [id : DOMAIN docL, awaiter : Id] :
-                y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
-            <3> SUFFICES ASSUME NEW y \in [id : DOMAIN docL, awaiter : Id],
-                                y.awaiter \in DOMAIN mid
-                         PROVE  y.awaiter \in DOMAIN docL
-                OBVIOUS
-            <3>1. DOMAIN docL = DOMAIN doc /\ DOMAIN mid = DOMAIN base
-                BY <1>3, <1>9, Zenon
-            <3>2. y \in [id : DOMAIN doc, awaiter : Id]
-                BY <3>1, Zenon
-            <3>3. y.awaiter \in DOMAIN base
-                BY <3>1, Zenon
-            <3>4. y.awaiter \in DOMAIN doc
-                BY <3>2, <3>3, Zenon
-            <3>5. QED
-                BY <3>1, <3>4, Zenon
+        <2>1. \A k \in DOMAIN doc :
+                docL[k].promise.callbacks = doc[k].promise.callbacks
+            <3>1. S \subseteq DOMAIN doc
+                BY <1>1
+            <3>2. QED
+                BY <3>1, CbBoth DEF docL, imD, pairs
         <2>2. QED
-            BY <2>1, LocalDue DEF calls, docL, mid
+            BY <1>3, <1>9, <2>1, DueLocal DEF calls, docL, mid, imD, imB
     <1>15. Plant(mid, o, ImgC(docL, calls, t)) = ImgC(mid, calls, t)
         BY <1>8, <1>10, <1>12, <1>13, <1>14, PlantC DEF mid, docL, calls
     <1>16. QED
@@ -3338,8 +3447,7 @@ LEMMA LeaseJoin ==
                    doc[i].promise.state = "pending"
                    /\ doc[i].promise.timeoutAt <= t },
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
@@ -3702,8 +3810,7 @@ LEMMA RetryJoin ==
                    doc[i].promise.state = "pending"
                    /\ doc[i].promise.timeoutAt <= t },
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
@@ -5024,8 +5131,7 @@ LEMMA OffLease ==
            DOMAIN doc = { i \in DOMAIN base : i.origin = o },
            k \in DOMAIN base,
            k.origin /= o,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
+           CbLocal(doc, base)
     PROVE  LET S ==
                 { i \in DOMAIN doc :
                     doc[i].promise.state = "pending"
@@ -5086,6 +5192,14 @@ PROOF
         BY AwSub DEF calls
     <1>13. calls \subseteq [id : DOMAIN doc, awaiter : Id]
         BY <1>5, <1>11, <1>12, Zenon
+    <1>13a. S \subseteq DOMAIN doc
+        BY <1>2
+    <1>13b. \A j \in DOMAIN doc :
+              docL[j].promise.callbacks = doc[j].promise.callbacks
+        BY <1>13a, CbBoth DEF docL, imD, pairs
+    <1>13c. \A y \in calls :
+              y.awaiter \in DOMAIN mid => y.awaiter \in DOMAIN docL
+        BY <1>5, <1>11, <1>13b, DueLocal DEF calls, docL, mid, imD, imB
     <1>14. \A y \in calls : y.id /= k /\ y.awaiter /= k
         <2> SUFFICES ASSUME NEW y \in calls
                      PROVE  y.id /= k /\ y.awaiter /= k
@@ -5096,16 +5210,23 @@ PROOF
             BY <2>1, Z3
         <2>3. y.id /= k
             BY <1>1, <2>2, Zenon
-        <2>4. y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc
-            BY <2>1, Zenon
+        <2>4. k \in DOMAIN mid /\ k \notin DOMAIN docL
+            BY <1>1, <1>5, <1>8, <1>11, Zenon
         <2>5. y.awaiter /= k
-            BY <1>1, <2>2, <2>4, Zenon
+            BY <1>13c, <2>4, Zenon
         <2>6. QED
             BY <2>3, <2>5
     <1>15. k \in DOMAIN mid
         BY <1>8, <1>11, Zenon
     <1>16. cbB[k] = mid[k]
-        BY <1>14, <1>15, StayC DEF cbB, calls
+        <2>1. \A y \in calls : y.id /= k
+            BY <1>14, Zenon
+        <2>2. \A y \in calls : y.awaiter /= k
+            BY <1>14, Zenon
+        <2>3. ImgC(mid, calls, t)[k] = mid[k]
+            BY <1>15, <2>1, <2>2, StayC
+        <2>4. QED
+            BY <2>3 DEF cbB
     <1>17. DOMAIN cbD = DOMAIN docL /\ DOMAIN cbB = DOMAIN mid
         BY DomImgC DEF cbD, cbB, docL, mid, calls
     <1>18. exp \subseteq DOMAIN cbD
@@ -5146,8 +5267,7 @@ LEMMA PlantOff ==
            base = [ i \in DOMAIN base |-> base[i] ],
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
@@ -5370,8 +5490,7 @@ LEMMA SweepReach ==
            base = [ i \in DOMAIN base |-> base[i] ],
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>

@@ -12,8 +12,7 @@ LEMMA SameDeliver ==
            base = [ i \in DOMAIN base |-> base[i] ],
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
@@ -210,8 +209,7 @@ LEMMA SweepSent ==
            base = [ i \in DOMAIN base |-> base[i] ],
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
@@ -433,8 +431,7 @@ LEMMA SweepIn ==
            base = [ i \in DOMAIN base |-> base[i] ],
            \A k \in DOMAIN doc : doc[k].promise.listeners \subseteq Address,
            \A k \in DOMAIN doc : doc[k].promise.callbacks \subseteq Id,
-           \A y \in [id : DOMAIN doc, awaiter : Id] :
-               y.awaiter \in DOMAIN base => y.awaiter \in DOMAIN doc,
+           CbLocal(doc, base),
            t /= NoTime,
            \A k \in DOMAIN doc :
                doc[k].task.state = "acquired" =>
