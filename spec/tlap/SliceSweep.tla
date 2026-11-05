@@ -66,4 +66,95 @@ PROOF
     <1>5. QED
         BY <1>1, <1>2, <1>3, SweepIn, Isa
 
+(* Listener sends and retry sends are sequences, and the other passes send
+   nothing, so the sweep's sends are a sequence. An empty tail drops. *)
+LEMMA DropTail ==
+    ASSUME NEW doc, NEW t, NEW b, DOMAIN doc \subseteq Id
+    PROVE  /\ Sweep(doc, t).sends \o << >> = Sweep(doc, t).sends
+           /\ Deliver(b, Sweep(doc, t).sends \o << >>)
+                = Deliver(b, Sweep(doc, t).sends)
+PROOF
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1> DEFINE edoc ==
+            SweepExpiresAt(
+                SweepCallbacks(SweepListeners(tdoc, t).doc, t).doc, t).doc
+    <1> DEFINE P == DueN(tdoc, t)
+    <1> DEFINE S ==
+            { i \in DOMAIN edoc :
+                edoc[i].task.state = "pending"
+                /\ edoc[i].task.retryTimeoutAt <= t }
+    <1>1. P = { x \in [id : { i \in DOMAIN tdoc :
+                                tdoc[i].promise.state /= "pending" },
+                       address : Address] :
+                  x.address \in tdoc[x.id].promise.listeners }
+        BY TimeoutDueN DEF tdoc, P
+    <1>2. P = { x \in [id : { i \in DOMAIN SweepTimeoutAt(doc, t).doc :
+                                SweepTimeoutAt(doc, t).doc[i].promise.state
+                                  /= "pending" },
+                       address : Address] :
+                  x.address
+                    \in SweepTimeoutAt(doc, t).doc[x.id].promise.listeners }
+        BY <1>1 DEF tdoc
+    <1>3. IsFiniteSet(P)
+        BY <1>2, ListenDueFinite
+    <1>4. S = { i \in DOMAIN SweepExpiresAt(
+                            SweepCallbacks(
+                                SweepListeners(
+                                    SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                            t).doc :
+                  /\ SweepExpiresAt(
+                         SweepCallbacks(
+                             SweepListeners(
+                                 SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                         t).doc[i].task.state = "pending"
+                  /\ SweepExpiresAt(
+                         SweepCallbacks(
+                             SweepListeners(
+                                 SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                         t).doc[i].task.retryTimeoutAt <= t }
+        BY Z3 DEF tdoc, edoc, S
+    <1>5. IsFiniteSet(S)
+        BY <1>4, RetryDueFinite
+    <1>6. \E E : SweepListeners(tdoc, t).sends \in Seq(E)
+        BY <1>1, <1>3, ListenSomeSeq, Isa
+    <1>7. \E E : SweepRetryAt(edoc, t).sends \in Seq(E)
+        BY <1>5, RetrySomeSeq, Isa DEF S
+    <1>8. PICK E1 : SweepListeners(tdoc, t).sends \in Seq(E1)
+        BY <1>6
+    <1>9. PICK E2 : SweepRetryAt(edoc, t).sends \in Seq(E2)
+        BY <1>7
+    <1> DEFINE E1set == E1 \cup E2
+    <1>10. E1 \subseteq E1set /\ E2 \subseteq E1set
+        BY Z3 DEF E1set
+    <1>11. SweepListeners(tdoc, t).sends \in Seq(E1set)
+        BY <1>8, <1>10, SeqMonotonic
+    <1>12. SweepRetryAt(edoc, t).sends \in Seq(E1set)
+        BY <1>9, <1>10, SeqMonotonic
+    <1> DEFINE heard == SweepListeners(tdoc, t).sends
+    <1> DEFINE retried == SweepRetryAt(edoc, t).sends
+    <1>13. heard = SweepListeners(SweepTimeoutAt(doc, t).doc, t).sends
+        BY Isa DEF heard, tdoc
+    <1>14. retried
+            = SweepRetryAt(
+                  SweepExpiresAt(
+                      SweepCallbacks(
+                          SweepListeners(
+                              SweepTimeoutAt(doc, t).doc, t).doc, t).doc,
+                      t).doc, t).sends
+        BY Isa DEF retried, edoc, tdoc
+    <1>15. Sweep(doc, t).sends = heard \o retried
+        BY ONLY <1>11, <1>12, <1>13, <1>14, SweepSends, Isa
+               DEF heard, retried, E1set
+    <1>16. heard \o retried \in Seq(E1set)
+        BY <1>11, <1>12, ConcatProperties DEF heard, retried
+    <1>17. << >> \in Seq(E1set)
+        BY EmptySeq DEF E1set
+    <1>18. (heard \o retried) \o << >> = heard \o retried
+        BY <1>16, <1>17, ConcatEmptySeq, Z3
+    <1>19. Sweep(doc, t).sends \o << >> = Sweep(doc, t).sends
+        BY ONLY <1>15, <1>18, Isa
+    <1>20. HIDE DEF Deliver
+    <1>21. QED
+        BY <1>19, Z3
+
 =============================================================================
