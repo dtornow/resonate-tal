@@ -2869,4 +2869,558 @@ PROOF
     <1>4. QED
         BY ONLY <1>2, <1>3, Z3
 
+LEMMA DropCbBits ==
+    ASSUME NEW obj
+    PROVE  /\ DropCallbacks(obj).promise.callbacks = {}
+           /\ DropCallbacks(obj).promise.listeners = obj.promise.listeners
+           /\ DropCallbacks(obj).promise.state = obj.promise.state
+           /\ DropCallbacks(obj).task = obj.task
+PROOF
+    <1> DEFINE p ==
+            [ state     |-> obj.promise.state,
+              param     |-> obj.promise.param,
+              value     |-> obj.promise.value,
+              tags      |-> obj.promise.tags,
+              timeoutAt |-> obj.promise.timeoutAt,
+              createdAt |-> obj.promise.createdAt,
+              settledAt |-> obj.promise.settledAt,
+              callbacks |-> {},
+              listeners |-> obj.promise.listeners ]
+    <1> DEFINE nw == [promise |-> p, task |-> obj.task]
+    <1>1. p.callbacks = {}
+          /\ p.listeners = obj.promise.listeners
+          /\ p.state = obj.promise.state
+        BY ONLY Z3 DEF p
+    <1>2. DropCallbacks(obj) = nw
+        BY ONLY Z3 DEF DropCallbacks, p, nw
+    <1>3. nw.promise = p /\ nw.task = obj.task
+        BY ONLY Z3 DEF nw
+    <1>4. nw.promise.callbacks = p.callbacks
+          /\ nw.promise.listeners = p.listeners
+          /\ nw.promise.state = p.state
+          /\ nw.task = obj.task
+        BY ONLY Z3 DEF nw
+    <1>5. QED
+        BY ONLY <1>1, <1>2, <1>3, <1>4, Z3
+
+LEMMA DropCbGuard ==
+    ASSUME NEW obj, Guard(obj)
+    PROVE  Guard(DropCallbacks(obj))
+           /\ DropCallbacks(obj).promise.callbacks = {}
+PROOF
+    <1> DEFINE nw == DropCallbacks(obj)
+    <1>1. nw.promise.callbacks = {}
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.state = obj.promise.state
+          /\ nw.task = obj.task
+        BY ONLY DropCbBits DEF nw
+    <1>2. nw.task.state = obj.task.state
+          /\ nw.task.ttl = obj.task.ttl
+          /\ nw.task.leaseTimeoutAt = obj.task.leaseTimeoutAt
+          /\ nw.task.retryTimeoutAt = obj.task.retryTimeoutAt
+        BY ONLY <1>1, Isa
+    <1>3. {} \subseteq {}
+        BY Z3
+    <1>4. obj.promise.listeners \subseteq Address
+          /\ obj.task.state = "acquired" =>
+                /\ obj.task.leaseTimeoutAt /= NoTime
+                /\ obj.task.ttl \in Ttl
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "pending" =>
+                /\ obj.task.retryTimeoutAt /= NoTime
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "suspended" => obj.promise.state = "pending"
+        BY Z3 DEF Guard
+    <1>5. QED
+        BY <1>1, <1>2, <1>4, Isa DEF Guard, nw
+
+LEMMA WakeBits ==
+    ASSUME NEW obj, NEW src, NEW t
+    PROVE  /\ Wake(obj, src, t).promise = obj.promise
+           /\ Wake(obj, src, t).task.state = "pending"
+           /\ Wake(obj, src, t).task.retryTimeoutAt = t
+PROOF
+    <1> DEFINE tk ==
+            [ state          |-> "pending",
+              version        |-> obj.task.version,
+              ttl            |-> NoTime,
+              pid            |-> NoPid,
+              leaseTimeoutAt |-> NoTime,
+              retryTimeoutAt |-> t,
+              resumes        |-> src ]
+    <1> DEFINE nw == [promise |-> obj.promise, task |-> tk]
+    <1>1. tk.state = "pending" /\ tk.retryTimeoutAt = t
+        BY ONLY Z3 DEF tk
+    <1>2. Wake(obj, src, t) = nw
+        BY ONLY Z3 DEF Wake, tk, nw
+    <1>3. nw.promise = obj.promise /\ nw.task = tk
+        BY ONLY Z3 DEF nw
+    <1>4. nw.task.state = tk.state
+          /\ nw.task.retryTimeoutAt = tk.retryTimeoutAt
+        BY ONLY Z3 DEF nw
+    <1>5. QED
+        BY ONLY <1>1, <1>2, <1>3, <1>4, Z3
+
+LEMMA WakeGuard ==
+    ASSUME NEW obj, NEW src, NEW t \in Nat,
+           Guard(obj), obj.task.state = "suspended"
+    PROVE  Guard(Wake(obj, src, t))
+           /\ Wake(obj, src, t).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1> DEFINE nw == Wake(obj, src, t)
+    <1>1. nw.promise = obj.promise
+          /\ nw.task.state = "pending"
+          /\ nw.task.retryTimeoutAt = t
+        BY ONLY WakeBits DEF nw
+    <1>2. nw.promise.callbacks = obj.promise.callbacks
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.state = obj.promise.state
+        BY ONLY <1>1, Isa
+    <1>3. t /= NoTime
+        BY PosTime, Z3
+    <1>4. obj.promise.state = "pending"
+          /\ obj.promise.listeners \subseteq Address
+        BY Z3 DEF Guard
+    <1>5. QED
+        BY <1>1, <1>2, <1>3, <1>4, Isa DEF Guard, nw
+
+LEMMA AddResBits ==
+    ASSUME NEW obj, NEW R
+    PROVE  /\ AddResumes(obj, R).promise = obj.promise
+           /\ AddResumes(obj, R).task.state = obj.task.state
+           /\ AddResumes(obj, R).task.ttl = obj.task.ttl
+           /\ AddResumes(obj, R).task.leaseTimeoutAt = obj.task.leaseTimeoutAt
+           /\ AddResumes(obj, R).task.retryTimeoutAt = obj.task.retryTimeoutAt
+PROOF
+    <1> DEFINE tk ==
+            [ state          |-> obj.task.state,
+              version        |-> obj.task.version,
+              ttl            |-> obj.task.ttl,
+              pid            |-> obj.task.pid,
+              leaseTimeoutAt |-> obj.task.leaseTimeoutAt,
+              retryTimeoutAt |-> obj.task.retryTimeoutAt,
+              resumes        |-> obj.task.resumes \cup R ]
+    <1> DEFINE nw == [promise |-> obj.promise, task |-> tk]
+    <1>1. tk.state = obj.task.state
+          /\ tk.ttl = obj.task.ttl
+          /\ tk.leaseTimeoutAt = obj.task.leaseTimeoutAt
+          /\ tk.retryTimeoutAt = obj.task.retryTimeoutAt
+        BY ONLY Z3 DEF tk
+    <1>2. AddResumes(obj, R) = nw
+        BY ONLY Z3 DEF AddResumes, tk, nw
+    <1>3. nw.promise = obj.promise /\ nw.task = tk
+        BY ONLY Z3 DEF nw
+    <1>4. nw.task.state = tk.state
+          /\ nw.task.ttl = tk.ttl
+          /\ nw.task.leaseTimeoutAt = tk.leaseTimeoutAt
+          /\ nw.task.retryTimeoutAt = tk.retryTimeoutAt
+        BY ONLY Z3 DEF nw
+    <1>5. QED
+        BY ONLY <1>1, <1>2, <1>3, <1>4, Z3
+
+LEMMA AddResGuard ==
+    ASSUME NEW obj, NEW R, Guard(obj)
+    PROVE  Guard(AddResumes(obj, R))
+           /\ AddResumes(obj, R).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1> DEFINE nw == AddResumes(obj, R)
+    <1>1. nw.promise = obj.promise
+          /\ nw.task.state = obj.task.state
+          /\ nw.task.ttl = obj.task.ttl
+          /\ nw.task.leaseTimeoutAt = obj.task.leaseTimeoutAt
+          /\ nw.task.retryTimeoutAt = obj.task.retryTimeoutAt
+        BY ONLY AddResBits DEF nw
+    <1>2. nw.promise.callbacks = obj.promise.callbacks
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.state = obj.promise.state
+        BY ONLY <1>1, Isa
+    <1>3. obj.promise.listeners \subseteq Address
+          /\ obj.task.state = "acquired" =>
+                /\ obj.task.leaseTimeoutAt /= NoTime
+                /\ obj.task.ttl \in Ttl
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "pending" =>
+                /\ obj.task.retryTimeoutAt /= NoTime
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "suspended" => obj.promise.state = "pending"
+        BY Z3 DEF Guard
+    <1>4. QED
+        BY <1>1, <1>2, <1>3, Isa DEF Guard, nw
+
+LEMMA CbOk ==
+    ASSUME NEW doc, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(SweepCallbacks(doc, t).doc)
+           /\ Home(SweepCallbacks(doc, t).doc, o)
+PROOF
+    <1>1. HIDE DEF SetToSeq
+    <1> DEFINE S ==
+            { x \in [id : { i \in DOMAIN doc : doc[i].promise.state /= "pending" },
+                     awaiter : Id] :
+                x.awaiter \in doc[x.id].promise.callbacks }
+    <1> DEFINE Resumes(w) == { x.id : x \in { y \in S : y.awaiter = w } }
+    <1> DEFINE Woken == { x.awaiter : x \in S } \cap DOMAIN doc
+    <1>2. CASE S = {}
+        <2>1. SweepCallbacks(doc, t) =
+                LET S == { x \in [id : { i \in DOMAIN doc :
+                                           doc[i].promise.state /= "pending" },
+                                  awaiter : Id] :
+                              x.awaiter \in doc[x.id].promise.callbacks }
+                    Resumes(w) == { x.id : x \in { y \in S : y.awaiter = w } }
+                    Woken == { x.awaiter : x \in S } \cap DOMAIN doc
+                    q == SetToSeq({ w \in Woken :
+                                      doc[w].task.state = "suspended" })
+                IN
+                IF S = {} THEN
+                    [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+                ELSE
+                [ doc   |-> [ i \in DOMAIN doc |->
+                                LET struck == IF doc[i].promise.state /= "pending"
+                                                 /\ doc[i].promise.callbacks /= {} THEN
+                                                  DropCallbacks(doc[i])
+                                              ELSE
+                                                  doc[i]
+                                IN
+                                    IF i \notin Woken
+                                       \/ struck.task.state \in {"none", "fulfilled"} THEN
+                                        struck
+                                    ELSE IF struck.task.state = "suspended" THEN
+                                        Wake(struck, Resumes(i), t)
+                                    ELSE
+                                        AddResumes(struck, Resumes(i)) ],
+                  puts  |-> [ n \in 1 .. Len(q) |->
+                                [at |-> t, id |-> q[n], kind |-> "retry"] ],
+                  dels  |-> << >>,
+                  sends |-> << >> ]
+            BY ONLY DEF SweepCallbacks
+        <2>2. SweepCallbacks(doc, t).doc = doc
+            BY <1>2, <2>1, Isa DEF S
+        <2>3. QED
+            BY <2>2, KeepDoc, Z3
+    <1>3. CASE S /= {}
+        <2> DEFINE img ==
+                [ i \in DOMAIN doc |->
+                    LET struck == IF doc[i].promise.state /= "pending"
+                                     /\ doc[i].promise.callbacks /= {} THEN
+                                      DropCallbacks(doc[i])
+                                  ELSE
+                                      doc[i]
+                    IN
+                        IF i \notin Woken
+                           \/ struck.task.state \in {"none", "fulfilled"} THEN
+                            struck
+                        ELSE IF struck.task.state = "suspended" THEN
+                            Wake(struck, Resumes(i), t)
+                        ELSE
+                            AddResumes(struck, Resumes(i)) ]
+        <2>1. SweepCallbacks(doc, t).doc = img
+            BY ONLY <1>3, Z3 DEF SweepCallbacks, S, Resumes, Woken, img
+        <2>2. DOMAIN img = DOMAIN doc
+            BY DomCtor, Isa DEF img
+        <2>3. ASSUME NEW i \in DOMAIN doc
+              PROVE  img[i].promise.callbacks \subseteq DOMAIN doc
+                     /\ Guard(img[i])
+            <3> DEFINE drop ==
+                    doc[i].promise.state /= "pending"
+                    /\ doc[i].promise.callbacks /= {}
+            <3> DEFINE struck ==
+                    IF drop THEN DropCallbacks(doc[i]) ELSE doc[i]
+            <3> DEFINE hold ==
+                    i \notin Woken \/ struck.task.state \in {"none", "fulfilled"}
+            <3> DEFINE sus == struck.task.state = "suspended"
+            <3>1. img[i] =
+                    IF hold THEN struck
+                    ELSE IF sus THEN Wake(struck, Resumes(i), t)
+                    ELSE AddResumes(struck, Resumes(i))
+                BY AppCtor, Isa DEF img, drop, struck, hold, sus, Woken, Resumes
+            <3>2. Guard(struck)
+                  /\ struck.promise.callbacks \subseteq DOMAIN doc
+                <4>1. CASE drop
+                    <5>1. struck = DropCallbacks(doc[i])
+                        BY ONLY <4>1, Z3 DEF struck, drop
+                    <5>2. DocOk(doc) /\ i \in DOMAIN doc
+                        BY Z3 DEF DocOk
+                    <5>3. Guard(doc[i])
+                        BY ONLY <5>2, Isa DEF DocOk
+                    <5>4. Guard(DropCallbacks(doc[i]))
+                          /\ DropCallbacks(doc[i]).promise.callbacks = {}
+                        BY <5>3, DropCbGuard, Z3
+                    <5>5. {} \subseteq DOMAIN doc
+                        BY Z3
+                    <5>6. (Guard(struck) <=> Guard(DropCallbacks(doc[i])))
+                          /\ struck.promise.callbacks
+                                = DropCallbacks(doc[i]).promise.callbacks
+                        BY ONLY <5>1, Isa
+                    <5>7. QED
+                        BY ONLY <5>4, <5>5, <5>6, Z3
+                <4>2. CASE ~drop
+                    <5>1. struck = doc[i]
+                        BY ONLY <4>2, Z3 DEF struck, drop
+                    <5>2. DocOk(doc) /\ i \in DOMAIN doc
+                        BY Z3 DEF DocOk
+                    <5>3. Guard(doc[i])
+                          /\ doc[i].promise.callbacks \subseteq DOMAIN doc
+                        BY ONLY <5>2, Isa DEF DocOk
+                    <5>4. (Guard(struck) <=> Guard(doc[i]))
+                          /\ struck.promise.callbacks = doc[i].promise.callbacks
+                        BY ONLY <5>1, Isa
+                    <5>5. QED
+                        BY ONLY <5>3, <5>4, Z3
+                <4>3. QED
+                    BY ONLY <4>1, <4>2, Z3
+            <3>3. CASE hold
+                <4>1. img[i] = struck
+                    BY ONLY <3>1, <3>3, Z3 DEF hold
+                <4>2. (Guard(img[i]) <=> Guard(struck))
+                      /\ img[i].promise.callbacks = struck.promise.callbacks
+                    BY ONLY <4>1, Isa
+                <4>3. HIDE DEF img
+                <4>4. QED
+                    BY ONLY <3>2, <4>2, Z3
+            <3>4. CASE ~hold /\ sus
+                <4>1. img[i] = Wake(struck, Resumes(i), t)
+                    BY ONLY <3>1, <3>4, Z3 DEF hold, sus
+                <4>2. struck.task.state = "suspended"
+                    BY ONLY <3>4, Z3 DEF sus
+                <4>3. Guard(Wake(struck, Resumes(i), t))
+                      /\ Wake(struck, Resumes(i), t).promise.callbacks
+                            = struck.promise.callbacks
+                    BY <3>2, <4>2, WakeGuard, Z3
+                <4>4. (Guard(img[i]) <=> Guard(Wake(struck, Resumes(i), t)))
+                      /\ img[i].promise.callbacks
+                            = Wake(struck, Resumes(i), t).promise.callbacks
+                    BY ONLY <4>1, Isa
+                <4>5. HIDE DEF img, Wake, Resumes
+                <4>6. Wake(struck, Resumes(i), t).promise.callbacks \subseteq DOMAIN doc
+                      /\ Guard(Wake(struck, Resumes(i), t))
+                    BY ONLY <3>2, <4>3, Z3
+                <4>7. QED
+                    BY ONLY <4>4, <4>6, Z3
+            <3>5. CASE ~hold /\ ~sus
+                <4>1. img[i] = AddResumes(struck, Resumes(i))
+                    BY ONLY <3>1, <3>5, Z3 DEF hold, sus
+                <4>2. Guard(AddResumes(struck, Resumes(i)))
+                      /\ AddResumes(struck, Resumes(i)).promise.callbacks
+                            = struck.promise.callbacks
+                    BY <3>2, AddResGuard, Z3
+                <4>3. (Guard(img[i]) <=> Guard(AddResumes(struck, Resumes(i))))
+                      /\ img[i].promise.callbacks
+                            = AddResumes(struck, Resumes(i)).promise.callbacks
+                    BY ONLY <4>1, Isa
+                <4>4. HIDE DEF img, AddResumes, Resumes
+                <4>5. AddResumes(struck, Resumes(i)).promise.callbacks \subseteq DOMAIN doc
+                      /\ Guard(AddResumes(struck, Resumes(i)))
+                    BY ONLY <3>2, <4>2, Z3
+                <4>6. QED
+                    BY ONLY <4>3, <4>5, Z3
+            <3>6. HIDE DEF img
+            <3>7. hold \/ (~hold /\ sus) \/ (~hold /\ ~sus)
+                BY Z3 DEF hold, sus
+            <3>8. QED
+                BY ONLY <3>3, <3>4, <3>5, <3>7, Z3
+        <2>4. HIDE DEF img, S, Resumes, Woken
+        <2>5. DOMAIN img = DOMAIN doc
+              /\ DocOk(doc) /\ Home(doc, o)
+              /\ \A i \in DOMAIN doc :
+                    img[i].promise.callbacks \subseteq DOMAIN doc
+                    /\ Guard(img[i])
+            BY <2>2, <2>3, Z3 DEF DocOk, Home
+        <2>6. DocOk(img) /\ Home(img, o)
+            BY ONLY <2>5, ImgOk, Z3
+        <2>7. QED
+            BY ONLY <2>1, <2>6, Z3
+    <1>4. QED
+        BY ONLY <1>2, <1>3, Z3
+
+(* The document of an IF of two records is the IF of their documents.
+   The fields stay abstract, so the five-field lease update never
+   enters this proof. *)
+LEMMA LetDoc ==
+    ASSUME NEW U, NEW qt, NEW a, NEW b,
+           NEW p1, NEW d1, NEW s1, NEW p2, NEW d2, NEW s2, NEW r,
+           r = LET S == U
+                   q == qt
+               IN IF S = {} THEN [ doc |-> a, puts |-> p1, dels |-> d1, sends |-> s1 ]
+                  ELSE [ doc |-> b, puts |-> p2, dels |-> d2, sends |-> s2 ]
+    PROVE  r.doc = LET S == U
+                       q == qt
+                   IN IF S = {} THEN a ELSE b
+PROOF
+    <1>1. CASE U = {}
+        BY <1>1, Z3
+    <1>2. CASE U /= {}
+        BY <1>2, Z3
+    <1>3. QED
+        BY <1>1, <1>2, Z3
+
+(* Once the set is nonempty, the document of that same IF is the else
+   document. The else document stays a parameter, so a caller can hide
+   the lease record before this lemma is used. *)
+LEMMA IfDoc ==
+    ASSUME NEW U, NEW qt, NEW a, NEW b,
+           NEW p1, NEW d1, NEW s1, NEW p2, NEW d2, NEW s2, NEW r,
+           r = LET S == U
+                   q == qt
+               IN IF S = {} THEN [ doc |-> a, puts |-> p1, dels |-> d1, sends |-> s1 ]
+                  ELSE [ doc |-> b, puts |-> p2, dels |-> d2, sends |-> s2 ],
+           U /= {}
+    PROVE  r.doc = b
+PROOF
+    <1>1. r.doc = LET S == U
+                      q == qt
+                  IN IF S = {} THEN a ELSE b
+        BY LetDoc
+    <1>2. QED
+        BY <1>1, Z3
+
+LEMMA ExpOk ==
+    ASSUME NEW doc, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(SweepExpiresAt(doc, t).doc)
+           /\ Home(SweepExpiresAt(doc, t).doc, o)
+PROOF
+    <1>1. HIDE DEF SetToSeq
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].task.state = "acquired"
+                /\ doc[i].task.leaseTimeoutAt <= t }
+    <1>2. CASE S = {}
+        <2>1. SweepExpiresAt(doc, t) =
+                LET S == { i \in DOMAIN doc :
+                             doc[i].task.state = "acquired"
+                             /\ doc[i].task.leaseTimeoutAt <= t }
+                    q == SetToSeq(S)
+                IN
+                IF S = {} THEN
+                    [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+                ELSE
+                [ doc   |-> [ i \in DOMAIN doc |->
+                                IF i \in S THEN
+                                    [ doc[i] EXCEPT !.task.state          = "pending",
+                                                    !.task.pid            = NoPid,
+                                                    !.task.ttl            = NoTime,
+                                                    !.task.leaseTimeoutAt = NoTime,
+                                                    !.task.retryTimeoutAt = t ]
+                                ELSE
+                                    doc[i] ],
+                  puts  |-> [ n \in 1 .. Len(q) |->
+                                [at |-> t, id |-> q[n], kind |-> "retry"] ],
+                  dels  |-> [ n \in 1 .. Len(q) |->
+                                [at |-> doc[q[n]].task.leaseTimeoutAt,
+                                 id |-> q[n], kind |-> "lease"] ],
+                  sends |-> << >> ]
+            BY ONLY DEF SweepExpiresAt
+        <2>2. SweepExpiresAt(doc, t).doc = doc
+            BY <1>2, <2>1, Isa DEF S
+        <2>3. QED
+            BY <2>2, KeepDoc, Z3
+    <1>3. CASE S /= {}
+        <2> DEFINE flat ==
+                [ i \in DOMAIN doc |->
+                    IF i \in S THEN
+                        [ doc[i] EXCEPT !.task.state          = "pending",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = t ]
+                    ELSE
+                        doc[i] ]
+        <2>1. SweepExpiresAt(doc, t).doc = flat
+            <3>1. SweepExpiresAt(doc, t) =
+                    LET S == { i \in DOMAIN doc :
+                                 doc[i].task.state = "acquired"
+                                 /\ doc[i].task.leaseTimeoutAt <= t }
+                        q == SetToSeq(S)
+                    IN
+                    IF S = {} THEN
+                        [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+                    ELSE
+                    [ doc   |-> flat,
+                      puts  |-> [ n \in 1 .. Len(q) |->
+                                    [at |-> t, id |-> q[n], kind |-> "retry"] ],
+                      dels  |-> [ n \in 1 .. Len(q) |->
+                                    [at |-> doc[q[n]].task.leaseTimeoutAt,
+                                     id |-> q[n], kind |-> "lease"] ],
+                      sends |-> << >> ]
+                BY ONLY DEF SweepExpiresAt, flat
+            <3>2. HIDE DEF flat
+            <3>3. S = { i \in DOMAIN doc :
+                          doc[i].task.state = "acquired"
+                          /\ doc[i].task.leaseTimeoutAt <= t }
+                BY ONLY DEF S
+            <3>4. QED
+                BY <1>3, <3>1, <3>3, IfDoc, Z3
+        <2>2. DOMAIN flat = DOMAIN doc
+            BY DomCtor, Isa DEF flat
+        <2>3. ASSUME NEW i \in DOMAIN doc
+              PROVE  flat[i].promise.callbacks \subseteq DOMAIN doc
+                     /\ Guard(flat[i])
+            <3>1. flat[i] =
+                    IF i \in S THEN
+                        [ doc[i] EXCEPT !.task.state          = "pending",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = t ]
+                    ELSE
+                        doc[i]
+                BY AppCtor, Isa DEF flat
+            <3>2. CASE i \in S
+                <4> DEFINE nw ==
+                        [ doc[i] EXCEPT !.task.state          = "pending",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = t ]
+                <4>1. flat[i] = nw
+                    BY ONLY <3>1, <3>2, Z3 DEF nw
+                <4>2. DocOk(doc) /\ i \in DOMAIN doc
+                    BY Z3 DEF DocOk
+                <4>3. Guard(doc[i]) /\ doc[i].task.state = "acquired"
+                      /\ doc[i].promise.callbacks \subseteq DOMAIN doc
+                    <5>1. i \in DOMAIN doc
+                          /\ doc[i].task.state = "acquired"
+                          /\ doc[i].task.leaseTimeoutAt <= t
+                        BY <3>2, MemComp, Isa DEF S
+                    <5>2. doc[i].promise.callbacks \subseteq DOMAIN doc
+                          /\ Guard(doc[i])
+                        BY ONLY <4>2, Isa DEF DocOk
+                    <5>3. QED
+                        BY ONLY <5>1, <5>2, Z3
+                <4>4. Guard(nw) /\ nw.promise.callbacks = doc[i].promise.callbacks
+                    BY <4>3, ExpBits, Isa DEF nw
+                <4>5. flat[i].promise.callbacks = nw.promise.callbacks
+                      /\ (Guard(flat[i]) <=> Guard(nw))
+                    BY ONLY <4>1, Isa
+                <4>6. QED
+                    BY ONLY <4>3, <4>4, <4>5, Z3
+            <3>3. CASE i \notin S
+                <4>1. flat[i] = doc[i]
+                    BY ONLY <3>1, <3>3, Z3
+                <4>2. DocOk(doc) /\ i \in DOMAIN doc
+                    BY Z3 DEF DocOk
+                <4>3. Guard(doc[i])
+                      /\ doc[i].promise.callbacks \subseteq DOMAIN doc
+                    BY ONLY <4>2, Isa DEF DocOk
+                <4>4. flat[i].promise.callbacks = doc[i].promise.callbacks
+                      /\ (Guard(flat[i]) <=> Guard(doc[i]))
+                    BY ONLY <4>1, Isa
+                <4>5. QED
+                    BY ONLY <4>3, <4>4, Z3
+            <3>4. QED
+                BY ONLY <3>2, <3>3, Z3
+        <2>4. HIDE DEF flat, S
+        <2>5. DOMAIN flat = DOMAIN doc
+              /\ DocOk(doc) /\ Home(doc, o)
+              /\ \A i \in DOMAIN doc :
+                    flat[i].promise.callbacks \subseteq DOMAIN doc
+                    /\ Guard(flat[i])
+            BY <2>2, <2>3, Z3 DEF DocOk, Home
+        <2>6. DocOk(flat) /\ Home(flat, o)
+            BY ONLY <2>5, ImgOk, Z3
+        <2>7. QED
+            BY ONLY <2>1, <2>6, Z3
+    <1>4. QED
+        BY ONLY <1>2, <1>3, Z3
+
 =============================================================================
