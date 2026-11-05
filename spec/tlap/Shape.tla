@@ -2345,4 +2345,105 @@ PROOF
            <1>10, <1>11, <1>12, <1>13, <1>14, <1>15, <1>16, Z3
            DEF HandleTag
 
+(* ------------------------------------------------------------------ *)
+
+LEMMA TimeOk ==
+    ASSUME NEW doc, NEW t, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(SweepTimeoutAt(doc, t).doc)
+           /\ Home(SweepTimeoutAt(doc, t).doc, o)
+PROOF
+    <1>1. HIDE DEF SetToSeq
+    <1> DEFINE S ==
+            { i \in DOMAIN doc :
+                doc[i].promise.state = "pending"
+                /\ doc[i].promise.timeoutAt <= t }
+    <1>2. CASE S = {}
+        <2>1. SweepTimeoutAt(doc, t) =
+                LET S  == { i \in DOMAIN doc :
+                              doc[i].promise.state = "pending"
+                              /\ doc[i].promise.timeoutAt <= t }
+                    qp == SetToSeq(S)
+                    ql == SetToSeq({ i \in S : doc[i].task.state = "acquired" })
+                    qr == SetToSeq({ i \in S : doc[i].task.state = "pending" })
+                IN
+                IF S = {} THEN
+                    [ doc |-> doc, puts |-> << >>, dels |-> << >>, sends |-> << >> ]
+                ELSE
+                [ doc   |-> [ i \in DOMAIN doc |->
+                                IF i \in S THEN Project(doc[i], t) ELSE doc[i] ],
+                  puts  |-> << >>,
+                  dels  |->    [ n \in 1 .. Len(qp) |->
+                                   [at |-> doc[qp[n]].promise.timeoutAt, id |-> qp[n], kind |-> "promise"] ]
+                            \o [ n \in 1 .. Len(ql) |->
+                                   [at |-> doc[ql[n]].task.leaseTimeoutAt,    id |-> ql[n], kind |-> "lease"] ]
+                            \o [ n \in 1 .. Len(qr) |->
+                                   [at |-> doc[qr[n]].task.retryTimeoutAt,      id |-> qr[n], kind |-> "retry"] ],
+                  sends |-> << >> ]
+            BY ONLY DEF SweepTimeoutAt
+        <2>2. SweepTimeoutAt(doc, t).doc = doc
+            BY <1>2, <2>1, Isa DEF S
+        <2>3. DocOk(doc) /\ Home(doc, o)
+            BY Z3 DEF DocOk, Home
+        <2>4. QED
+            BY <2>2, <2>3, Isa
+    <1>3. CASE S /= {}
+        <2> DEFINE img ==
+                [ i \in DOMAIN doc |->
+                    IF i \in S THEN Project(doc[i], t) ELSE doc[i] ]
+        <2>1. SweepTimeoutAt(doc, t).doc = img
+            BY ONLY <1>3, Z3 DEF SweepTimeoutAt, S, img
+        <2>2. DOMAIN img = DOMAIN doc
+            BY DomCtor, Isa DEF img
+        <2>3. ASSUME NEW i \in DOMAIN doc
+              PROVE  img[i].promise.callbacks \subseteq DOMAIN doc
+                     /\ Guard(img[i])
+            <3>1. img[i] = IF i \in S THEN Project(doc[i], t) ELSE doc[i]
+                BY AppCtor, Isa DEF img
+            <3>2. CASE i \in S
+                <4>1. img[i] = Project(doc[i], t)
+                    BY ONLY <3>1, <3>2, Z3
+                <4>2. Project(doc[i], t).promise.callbacks
+                        = doc[i].promise.callbacks
+                    BY ProjCb, Z3
+                <4>3. DocOk(doc) /\ i \in DOMAIN doc
+                    BY Z3 DEF DocOk
+                <4>4. doc[i].promise.callbacks \subseteq DOMAIN doc
+                      /\ Guard(doc[i])
+                    BY ONLY <4>3, Isa DEF DocOk
+                <4>5. Guard(Project(doc[i], t))
+                    BY <4>4, ProjGuard, Z3
+                <4>6. img[i].promise.callbacks
+                        = Project(doc[i], t).promise.callbacks
+                      /\ (Guard(img[i]) <=> Guard(Project(doc[i], t)))
+                    BY ONLY <4>1, Isa
+                <4>7. QED
+                    BY ONLY <4>2, <4>4, <4>5, <4>6, Z3
+            <3>3. CASE i \notin S
+                <4>1. img[i] = doc[i]
+                    BY ONLY <3>1, <3>3, Z3
+                <4>2. DocOk(doc) /\ i \in DOMAIN doc
+                    BY Z3 DEF DocOk
+                <4>3. doc[i].promise.callbacks \subseteq DOMAIN doc
+                      /\ Guard(doc[i])
+                    BY ONLY <4>2, Isa DEF DocOk
+                <4>4. img[i].promise.callbacks = doc[i].promise.callbacks
+                      /\ (Guard(img[i]) <=> Guard(doc[i]))
+                    BY ONLY <4>1, Isa
+                <4>5. QED
+                    BY ONLY <4>3, <4>4, Z3
+            <3>4. QED
+                BY ONLY <3>2, <3>3, Z3
+        <2>4. \A i \in DOMAIN img :
+                img[i].promise.callbacks \subseteq DOMAIN img /\ Guard(img[i])
+            BY <2>2, <2>3, Z3
+        <2>5. DocOk(img)
+            BY <2>4, Z3 DEF DocOk
+        <2>6. Home(img, o)
+            BY <2>2, SameHome, Isa
+        <2>7. QED
+            BY ONLY <2>1, <2>5, <2>6, Z3
+    <1>4. QED
+        BY ONLY <1>2, <1>3, Z3
+
 =============================================================================
