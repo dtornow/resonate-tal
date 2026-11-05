@@ -2192,4 +2192,157 @@ PROOF
     <1>4. QED
         BY ONLY <1>2, <1>3, Z3
 
+HandleTag ==
+    { "PromiseGet", "PromiseCreate", "PromiseSettle",
+      "PromiseRegisterCallback", "PromiseRegisterListener",
+      "TaskGet", "TaskCreate", "TaskAcquire", "TaskFence",
+      "TaskHeartbeat", "TaskSuspend", "TaskFulfill",
+      "TaskRelease", "TaskHalt", "TaskContinue", "Timeout" }
+
+LEMMA AcqTtl ==
+    ASSUME NEW ev \in Event, ev.tag = "TaskAcquire"
+    PROVE  ev.ttl \in Ttl
+PROOF
+    BY Z3 DEF Event, ExternalEvent, InternalEvent, On
+
+LEMMA LsAddr ==
+    ASSUME NEW ev \in Event, ev.tag = "PromiseRegisterListener"
+    PROVE  ev.address \in Address
+PROOF
+    BY Z3 DEF Event, ExternalEvent, InternalEvent, On
+
+LEMMA CreateOf ==
+    ASSUME NEW ev \in Event, ev.tag = "PromiseCreate"
+    PROVE  ev.req \in CreateReq
+PROOF
+    BY Z3 DEF Event, ExternalEvent, InternalEvent, On
+
+LEMMA TCreateOf ==
+    ASSUME NEW ev \in Event, ev.tag = "TaskCreate"
+    PROVE  ev.ttl \in Ttl /\ ev.action \in CreateReq
+PROOF
+    BY Z3 DEF Event, ExternalEvent, InternalEvent, On
+
+LEMMA FenceOf ==
+    ASSUME NEW ev \in Event, ev.tag = "TaskFence"
+    PROVE  \/ /\ ev.action.tag = "Create" /\ ev.action.req \in CreateReq
+           \/ /\ ev.action.tag = "Settle" /\ ev.action.req \in SettleReq
+PROOF
+    BY Z3 DEF Event, ExternalEvent, InternalEvent, On, FenceAction
+
+LEMMA HandleOk ==
+    ASSUME NEW ev, NEW doc, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o),
+           ev \in Event, ev.tag \in HandleTag, OriginOf(ev) = o
+    PROVE  DocOk(Handle(ev, doc, t).doc)
+           /\ Home(Handle(ev, doc, t).doc, o)
+PROOF
+    <1>1. CASE ev.tag = "PromiseGet"
+        <2>1. Handle(ev, doc, t) = HandlePromiseGet(ev, doc, t)
+            BY ONLY <1>1, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, GetOk, Isa
+    <1>2. CASE ev.tag = "PromiseCreate"
+        <2>1. Handle(ev, doc, t) = HandlePromiseCreate(ev.req, doc, t)
+            BY ONLY <1>2, Z3 DEF Handle
+        <2>2. ev.req \in CreateReq
+            BY <1>2, CreateOf, Z3
+        <2>3. ev.req.id \in Id
+            BY ONLY <2>2, CreateId, Z3
+        <2>4. ev.req.id.origin = o
+            BY <1>2, Z3 DEF OriginOf
+        <2>5. QED
+            BY <2>1, <2>3, <2>4, CreateOk, Isa
+    <1>3. CASE ev.tag = "PromiseSettle"
+        <2>1. Handle(ev, doc, t) = HandlePromiseSettle(ev.req, doc, t)
+            BY ONLY <1>3, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, SettleOk, Isa
+    <1>4. CASE ev.tag = "PromiseRegisterCallback"
+        <2>1. Handle(ev, doc, t)
+                = HandlePromiseRegisterCallback(ev.req, doc, t)
+            BY ONLY <1>4, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, RegCbOk, Isa
+    <1>5. CASE ev.tag = "PromiseRegisterListener"
+        <2>1. Handle(ev, doc, t)
+                = HandlePromiseRegisterListener(ev, doc, t)
+            BY ONLY <1>5, Z3 DEF Handle
+        <2>2. ev.address \in Address
+            BY <1>5, LsAddr, Z3
+        <2>3. QED
+            BY <2>1, <2>2, RegLsOk, Isa
+    <1>6. CASE ev.tag = "TaskGet"
+        <2>1. Handle(ev, doc, t) = HandleTaskGet(ev, doc, t)
+            BY ONLY <1>6, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, TGetOk, Isa
+    <1>7. CASE ev.tag = "TaskCreate"
+        <2>1. Handle(ev, doc, t) = HandleTaskCreate(ev, doc, t)
+            BY ONLY <1>7, Z3 DEF Handle
+        <2>2. ev.action \in CreateReq /\ ev.ttl \in Ttl
+            BY <1>7, TCreateOf, Z3
+        <2>3. ev.action.id \in Id
+            BY ONLY <2>2, CreateId, Z3
+        <2>4. ev.action.id.origin = o
+            BY <1>7, Z3 DEF OriginOf
+        <2>5. QED
+            BY <2>1, <2>2, <2>3, <2>4, TCreateOk, Isa
+    <1>8. CASE ev.tag = "TaskAcquire"
+        <2>1. Handle(ev, doc, t) = HandleTaskAcquire(ev, doc, t)
+            BY ONLY <1>8, Z3 DEF Handle
+        <2>2. ev.ttl \in Ttl
+            BY <1>8, AcqTtl, Z3
+        <2>3. QED
+            BY <2>1, <2>2, AcqOk, Isa
+    <1>9. CASE ev.tag = "TaskFence"
+        <2>1. Handle(ev, doc, t) = HandleTaskFence(ev, doc, t)
+            BY ONLY <1>9, Z3 DEF Handle
+        <2>2. ev.id.origin = o
+            BY <1>9, Z3 DEF OriginOf
+        <2>3. \/ /\ ev.action.tag = "Create" /\ ev.action.req \in CreateReq
+              \/ /\ ev.action.tag = "Settle" /\ ev.action.req \in SettleReq
+            BY <1>9, FenceOf, Z3
+        <2>4. QED
+            BY <2>1, <2>2, <2>3, FenceOk, Isa
+    <1>10. CASE ev.tag = "TaskHeartbeat"
+        <2>1. Handle(ev, doc, t) = HandleTaskHeartbeat(ev, doc, t)
+            BY ONLY <1>10, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, BeatOk, Isa
+    <1>11. CASE ev.tag = "TaskSuspend"
+        <2>1. Handle(ev, doc, t) = HandleTaskSuspend(ev, doc, t)
+            BY ONLY <1>11, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, SusOk, Isa
+    <1>12. CASE ev.tag = "TaskFulfill"
+        <2>1. Handle(ev, doc, t) = HandleTaskFulfill(ev, doc, t)
+            BY ONLY <1>12, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, FulOk, Isa
+    <1>13. CASE ev.tag = "TaskRelease"
+        <2>1. Handle(ev, doc, t) = HandleTaskRelease(ev, doc, t)
+            BY ONLY <1>13, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, RelOk, Isa
+    <1>14. CASE ev.tag = "TaskHalt"
+        <2>1. Handle(ev, doc, t) = HandleTaskHalt(ev, doc, t)
+            BY ONLY <1>14, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, HaltOk, Isa
+    <1>15. CASE ev.tag = "TaskContinue"
+        <2>1. Handle(ev, doc, t) = HandleTaskContinue(ev, doc, t)
+            BY ONLY <1>15, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, ContOk, Isa
+    <1>16. CASE ev.tag = "Timeout"
+        <2>1. Handle(ev, doc, t) = Skip(doc)
+            BY ONLY <1>16, Z3 DEF Handle
+        <2>2. QED
+            BY <2>1, SkipBoth, Isa
+    <1>17. QED
+        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9,
+           <1>10, <1>11, <1>12, <1>13, <1>14, <1>15, <1>16, Z3
+           DEF HandleTag
+
 =============================================================================
