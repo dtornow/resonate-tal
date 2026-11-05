@@ -1820,4 +1820,376 @@ PROOF
     <1>5. QED
         BY ONLY <1>3, <1>4, Z3
 
+LEMMA SusGuard ==
+    ASSUME NEW obj, Guard(obj), obj.promise.state = "pending"
+    PROVE  Guard(SusOf(obj))
+           /\ SusOf(obj).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1> DEFINE nw == SusOf(obj)
+    <1>1. nw.promise = obj.promise /\ nw.task.state = "suspended"
+        BY ONLY SusFields DEF nw
+    <1>2. nw.promise.callbacks = obj.promise.callbacks
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.state = obj.promise.state
+        BY ONLY <1>1, Isa
+    <1>3. obj.promise.state = "pending"
+          /\ obj.promise.listeners \subseteq Address
+        BY Z3 DEF Guard
+    <1>4. nw.promise.state = "pending"
+          /\ nw.promise.listeners \subseteq Address
+          /\ nw.task.state = "suspended"
+          /\ nw.promise.callbacks = obj.promise.callbacks
+        BY ONLY <1>1, <1>2, <1>3, Z3
+    <1>5. QED
+        BY ONLY <1>4, Z3 DEF Guard
+
+ClearRes(obj) ==
+    [obj EXCEPT !.task.resumes = {}]
+
+LEMMA ClearFields ==
+    ASSUME NEW obj
+    PROVE  /\ ClearRes(obj).promise = obj.promise
+           /\ ClearRes(obj).task.state = obj.task.state
+           /\ ClearRes(obj).task.ttl = obj.task.ttl
+           /\ ClearRes(obj).task.leaseTimeoutAt = obj.task.leaseTimeoutAt
+           /\ ClearRes(obj).task.retryTimeoutAt = obj.task.retryTimeoutAt
+PROOF
+    <1> DEFINE k1 == [obj.task EXCEPT !.resumes = {}]
+    <1> DEFINE nw == [obj EXCEPT !.task = k1]
+    <1>1. k1.resumes = {} /\ k1.state = obj.task.state
+          /\ k1.ttl = obj.task.ttl
+          /\ k1.leaseTimeoutAt = obj.task.leaseTimeoutAt
+          /\ k1.retryTimeoutAt = obj.task.retryTimeoutAt
+        BY ONLY Z3 DEF k1
+    <1>2. nw.task = k1 /\ nw.promise = obj.promise
+        BY ONLY Z3 DEF nw
+    <1>3. ClearRes(obj) = nw
+        BY Zenon DEF ClearRes, k1, nw
+    <1>4. nw.task.state = k1.state /\ nw.task.ttl = k1.ttl
+          /\ nw.task.leaseTimeoutAt = k1.leaseTimeoutAt
+          /\ nw.task.retryTimeoutAt = k1.retryTimeoutAt
+          /\ nw.promise = obj.promise
+        BY ONLY <1>2, Isa
+    <1>5. QED
+        BY ONLY <1>1, <1>3, <1>4, Z3
+
+LEMMA ClearGuard ==
+    ASSUME NEW obj, Guard(obj)
+    PROVE  Guard(ClearRes(obj))
+           /\ ClearRes(obj).promise.callbacks = obj.promise.callbacks
+PROOF
+    <1> DEFINE nw == ClearRes(obj)
+    <1>1. nw.promise = obj.promise /\ nw.task.state = obj.task.state
+          /\ nw.task.ttl = obj.task.ttl
+          /\ nw.task.leaseTimeoutAt = obj.task.leaseTimeoutAt
+          /\ nw.task.retryTimeoutAt = obj.task.retryTimeoutAt
+        BY ONLY ClearFields DEF nw
+    <1>2. nw.promise.callbacks = obj.promise.callbacks
+          /\ nw.promise.listeners = obj.promise.listeners
+          /\ nw.promise.state = obj.promise.state
+        BY ONLY <1>1, Isa
+    <1>3. obj.task.state = "acquired" =>
+                /\ obj.task.leaseTimeoutAt /= NoTime
+                /\ obj.task.ttl \in Ttl
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "pending" =>
+                /\ obj.task.retryTimeoutAt /= NoTime
+                /\ obj.promise.state = "pending"
+          /\ obj.task.state = "suspended" => obj.promise.state = "pending"
+          /\ obj.promise.listeners \subseteq Address
+        BY Z3 DEF Guard
+    <1>4. QED
+        BY <1>1, <1>2, <1>3, Isa DEF Guard, nw
+
+LEMMA SusOk ==
+    ASSUME NEW req, NEW doc, NEW t, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(HandleTaskSuspend(req, doc, t).doc)
+           /\ Home(HandleTaskSuspend(req, doc, t).doc, o)
+PROOF
+    <1>1. HandleTaskSuspend(req, doc, t) =
+            LET aw   == { a.awaited : a \in req.actions }
+                seen == { a \in aw : a \in DOMAIN doc }
+            IN IF \/ req.actions = {}
+                  \/ req.id \in aw
+                  \/ \E a \in aw : a.origin /= req.id.origin
+                  \/ req.id \notin DOMAIN doc
+                  \/ seen /= aw
+               THEN Skip(doc)
+               ELSE LET old == Project(doc[req.id], t)
+                        new == [old EXCEPT !.task.state          = "suspended",
+                                           !.task.pid            = NoPid,
+                                           !.task.ttl            = NoTime,
+                                           !.task.leaseTimeoutAt = NoTime,
+                                           !.task.retryTimeoutAt = NoTime,
+                                           !.task.resumes        = {}]
+                    IN IF \/ old.task.state /= "acquired"
+                          \/ old.promise.state /= "pending"
+                          \/ old.task.version /= req.version
+                          \/ \E a \in aw :
+                                ~IsExternal(Project(doc[a], t).promise)
+                       THEN Skip(doc)
+                       ELSE IF \E a \in aw :
+                                 Project(doc[a], t).promise.state /= "pending"
+                            THEN [ doc |->
+                                     Write(doc, req.id,
+                                           [old EXCEPT !.task.resumes = {}]),
+                                   puts |-> << >>,
+                                   dels |-> << >>,
+                                   sends |-> << >> ]
+                            ELSE [ doc |->
+                                     [ i \in DOMAIN doc |->
+                                         IF i = req.id THEN new
+                                         ELSE IF i \in aw THEN
+                                             [Project(doc[i], t) EXCEPT
+                                                  !.promise.callbacks =
+                                                      @ \cup {req.id}]
+                                         ELSE doc[i] ],
+                                   puts |-> << >>,
+                                   dels |->
+                                     << [at |-> old.task.leaseTimeoutAt,
+                                         id |-> req.id, kind |-> "lease"] >>,
+                                   sends |-> << >> ]
+        BY ONLY DEF HandleTaskSuspend
+    <1> DEFINE aw == { a.awaited : a \in req.actions }
+    <1> DEFINE seen == { a \in aw : a \in DOMAIN doc }
+    <1> DEFINE outer ==
+            \/ req.actions = {}
+            \/ req.id \in aw
+            \/ \E a \in aw : a.origin /= req.id.origin
+            \/ req.id \notin DOMAIN doc
+            \/ seen /= aw
+    <1>2. CASE outer
+        <2>1. HandleTaskSuspend(req, doc, t).doc = doc
+            BY <1>1, <1>2, Isa DEF aw, seen, outer, Skip
+        <2>2. DocOk(doc) /\ Home(doc, o)
+            BY Z3 DEF DocOk, Home
+        <2>3. QED
+            BY <2>1, <2>2, Isa
+    <1>3. CASE ~outer
+        <2> DEFINE old == Project(doc[req.id], t)
+        <2> DEFINE inner ==
+                \/ old.task.state /= "acquired"
+                \/ old.promise.state /= "pending"
+                \/ old.task.version /= req.version
+                \/ \E a \in aw : ~IsExternal(Project(doc[a], t).promise)
+        <2> DEFINE late ==
+                \E a \in aw : Project(doc[a], t).promise.state /= "pending"
+        <2>1. req.id \in DOMAIN doc /\ req.id \notin aw /\ seen = aw
+              /\ aw \subseteq DOMAIN doc
+            BY <1>3, Isa DEF outer, aw, seen
+        <2>2. CASE inner
+            <3>1. HandleTaskSuspend(req, doc, t).doc = doc
+                BY <1>1, <1>3, <2>2, Isa DEF aw, seen, old, outer, inner, Skip
+            <3>2. DocOk(doc) /\ Home(doc, o)
+                BY Z3 DEF DocOk, Home
+            <3>3. QED
+                BY <3>1, <3>2, Isa
+        <2>3. CASE ~inner /\ late
+            <3> DEFINE cleared == [old EXCEPT !.task.resumes = {}]
+            <3> DEFINE nw == ClearRes(old)
+            <3>1. HandleTaskSuspend(req, doc, t).doc
+                    = Write(doc, req.id, cleared)
+                BY ONLY <1>1, <1>3, <2>3, Z3
+                   DEF aw, seen, old, outer, inner, late, cleared
+            <3>2. cleared = nw
+                BY Zenon DEF cleared, nw, ClearRes, old
+            <3>3. old.task.state = "acquired" /\ old.promise.state = "pending"
+                BY ONLY <2>3, Z3 DEF inner
+            <3>4. Project(doc[req.id], t) = doc[req.id]
+                <4>1. CASE doc[req.id].promise.state = "pending"
+                         /\ doc[req.id].promise.timeoutAt <= t
+                    <5>1. old.task.state \in {"none", "fulfilled"}
+                        BY ONLY <4>1, ProjFields, Z3 DEF old
+                    <5>2. QED
+                        BY ONLY <3>3, <5>1, Z3
+                <4>2. CASE doc[req.id].promise.state /= "pending"
+                         \/ ~(doc[req.id].promise.timeoutAt <= t)
+                    BY ONLY <4>2, ProjId, Z3 DEF old
+                <4>3. QED
+                    BY ONLY <4>1, <4>2, Z3
+            <3>5. old = doc[req.id]
+                BY ONLY <3>4, Z3 DEF old
+            <3>6. Guard(doc[req.id])
+                  /\ doc[req.id].promise.callbacks \subseteq DOMAIN doc
+                <4>1. DocOk(doc) /\ req.id \in DOMAIN doc
+                    BY <2>1, Z3 DEF DocOk
+                <4>2. QED
+                    BY ONLY <4>1, Isa DEF DocOk
+            <3>7. Guard(nw) /\ nw.promise.callbacks = old.promise.callbacks
+                BY <3>5, <3>6, ClearGuard, Isa DEF nw
+            <3>8. DOMAIN Write(doc, req.id, nw) = DOMAIN doc
+                <4>1. DOMAIN Write(doc, req.id, nw) = (DOMAIN doc) \cup {req.id}
+                    BY WriteDom, Isa
+                <4>2. QED
+                    BY <2>1, <4>1, Isa
+            <3>9. DocOk(Write(doc, req.id, nw))
+                <4>1. nw.promise.callbacks \subseteq DOMAIN doc
+                    BY ONLY <3>5, <3>6, <3>7, Z3
+                <4>2. nw.promise.callbacks \subseteq (DOMAIN doc) \cup {req.id}
+                    BY ONLY <4>1, Z3
+                <4>3. DocOk(doc) /\ Guard(nw)
+                    BY <3>7, Z3 DEF DocOk
+                <4>4. QED
+                    BY ONLY <4>2, <4>3, WriteOk, Z3
+            <3>10. Home(Write(doc, req.id, nw), o)
+                BY <3>8, SameHome, Isa
+            <3>11. Write(doc, req.id, cleared) = Write(doc, req.id, nw)
+                BY ONLY <3>2, Z3
+            <3>12. QED
+                BY <3>1, <3>9, <3>10, <3>11, Isa
+        <2>4. CASE ~inner /\ ~late
+            <3> DEFINE img ==
+                    [ i \in DOMAIN doc |->
+                        IF i = req.id THEN
+                            [old EXCEPT !.task.state          = "suspended",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = NoTime,
+                                        !.task.resumes        = {}]
+                        ELSE IF i \in aw THEN
+                            [Project(doc[i], t) EXCEPT
+                                 !.promise.callbacks = @ \cup {req.id}]
+                        ELSE doc[i] ]
+            <3>1. HandleTaskSuspend(req, doc, t).doc = img
+                BY ONLY <1>1, <1>3, <2>4, Z3
+                   DEF aw, seen, old, outer, inner, late, img
+            <3>2. DOMAIN img = DOMAIN doc
+                BY DomCtor, Isa DEF img
+            <3>3. old.task.state = "acquired" /\ old.promise.state = "pending"
+                BY ONLY <2>4, Z3 DEF inner
+            <3>4. Project(doc[req.id], t) = doc[req.id]
+                <4>1. CASE doc[req.id].promise.state = "pending"
+                         /\ doc[req.id].promise.timeoutAt <= t
+                    <5>1. old.task.state \in {"none", "fulfilled"}
+                        BY ONLY <4>1, ProjFields, Z3 DEF old
+                    <5>2. QED
+                        BY ONLY <3>3, <5>1, Z3
+                <4>2. CASE doc[req.id].promise.state /= "pending"
+                         \/ ~(doc[req.id].promise.timeoutAt <= t)
+                    BY ONLY <4>2, ProjId, Z3 DEF old
+                <4>3. QED
+                    BY ONLY <4>1, <4>2, Z3
+            <3>5. old = doc[req.id]
+                BY ONLY <3>4, Z3 DEF old
+            <3>6. \A a \in aw : Project(doc[a], t).promise.state = "pending"
+                BY ONLY <2>4, Z3 DEF late
+            <3>7. ASSUME NEW i \in DOMAIN doc
+                  PROVE  img[i].promise.callbacks \subseteq DOMAIN doc
+                         /\ Guard(img[i])
+                <4>1. img[i] =
+                        IF i = req.id THEN
+                            [old EXCEPT !.task.state          = "suspended",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = NoTime,
+                                        !.task.resumes        = {}]
+                        ELSE IF i \in aw THEN
+                            [Project(doc[i], t) EXCEPT
+                                 !.promise.callbacks = @ \cup {req.id}]
+                        ELSE doc[i]
+                    BY AppCtor, Isa DEF img
+                <4>2. CASE i = req.id
+                    <5> DEFINE built ==
+                            [old EXCEPT !.task.state          = "suspended",
+                                        !.task.pid            = NoPid,
+                                        !.task.ttl            = NoTime,
+                                        !.task.leaseTimeoutAt = NoTime,
+                                        !.task.retryTimeoutAt = NoTime,
+                                        !.task.resumes        = {}]
+                    <5> DEFINE nw == SusOf(old)
+                    <5>1. img[i] = built
+                        BY ONLY <4>1, <4>2, Z3 DEF built
+                    <5>2. built = nw
+                        BY Zenon DEF built, nw, SusOf, old
+                    <5>3. Guard(doc[req.id])
+                          /\ doc[req.id].promise.callbacks \subseteq DOMAIN doc
+                        <6>1. DocOk(doc) /\ req.id \in DOMAIN doc
+                            BY <2>1, Z3 DEF DocOk
+                        <6>2. QED
+                            BY ONLY <6>1, Isa DEF DocOk
+                    <5>4. Guard(nw)
+                          /\ nw.promise.callbacks = old.promise.callbacks
+                        BY <3>3, <3>5, <5>3, SusGuard, Isa DEF nw
+                    <5>5. img[i].promise.callbacks = nw.promise.callbacks
+                          /\ (Guard(img[i]) <=> Guard(nw))
+                        BY ONLY <5>1, <5>2, Isa
+                    <5>6. QED
+                        BY ONLY <3>5, <5>3, <5>4, <5>5, Z3
+                <4>3. CASE i /= req.id /\ i \in aw
+                    <5> DEFINE proj == Project(doc[i], t)
+                    <5> DEFINE built ==
+                            [proj EXCEPT !.promise.callbacks = @ \cup {req.id}]
+                    <5> DEFINE nw ==
+                            WithCb(proj, proj.promise.callbacks \cup {req.id})
+                    <5>1. img[i] = built
+                        BY ONLY <4>1, <4>3, Z3 DEF built, proj
+                    <5>2. built = nw
+                        BY ONLY Z3 DEF built, nw, WithCb, proj
+                    <5>3. proj.promise.state = "pending"
+                        BY ONLY <3>6, <4>3, Z3 DEF proj
+                    <5>4. Project(doc[i], t) = doc[i]
+                        <6>1. CASE doc[i].promise.state = "pending"
+                                 /\ doc[i].promise.timeoutAt <= t
+                            <7>1. proj.promise.state \in
+                                    {"resolved", "rejectedTimedout"}
+                                BY ONLY <6>1, ProjFields, Z3 DEF proj
+                            <7>2. QED
+                                BY ONLY <5>3, <7>1, Z3
+                        <6>2. CASE doc[i].promise.state /= "pending"
+                                 \/ ~(doc[i].promise.timeoutAt <= t)
+                            BY ONLY <6>2, ProjId, Z3 DEF proj
+                        <6>3. QED
+                            BY ONLY <6>1, <6>2, Z3
+                    <5>5. proj = doc[i]
+                        BY ONLY <5>4, Z3 DEF proj
+                    <5>6. Guard(doc[i])
+                          /\ doc[i].promise.callbacks \subseteq DOMAIN doc
+                        BY Isa DEF DocOk
+                    <5>7. nw.promise.callbacks
+                            = proj.promise.callbacks \cup {req.id}
+                          /\ nw.promise.state = proj.promise.state
+                          /\ nw.task = proj.task
+                        BY ONLY CbFields DEF nw
+                    <5>8. Guard(nw)
+                        <6>1. proj.promise.callbacks \cup {req.id}
+                                \subseteq proj.promise.callbacks \cup {req.id}
+                            BY Z3
+                        <6>2. Guard(proj)
+                            BY <5>5, <5>6, Z3 DEF Guard, proj
+                        <6>3. QED
+                            BY ONLY <6>1, <6>2, CbGuard, Z3 DEF nw
+                    <5>9. nw.promise.callbacks \subseteq DOMAIN doc
+                        BY ONLY <2>1, <5>5, <5>6, <5>7, Z3
+                    <5>10. img[i].promise.callbacks = nw.promise.callbacks
+                           /\ (Guard(img[i]) <=> Guard(nw))
+                        BY ONLY <5>1, <5>2, Isa
+                    <5>11. QED
+                        BY ONLY <5>8, <5>9, <5>10, Z3
+                <4>4. CASE i /= req.id /\ i \notin aw
+                    <5>1. img[i] = doc[i]
+                        BY ONLY <4>1, <4>4, Z3
+                    <5>2. doc[i].promise.callbacks \subseteq DOMAIN doc
+                          /\ Guard(doc[i])
+                        BY Isa DEF DocOk
+                    <5>3. img[i].promise.callbacks = doc[i].promise.callbacks
+                          /\ (Guard(img[i]) <=> Guard(doc[i]))
+                        BY ONLY <5>1, Isa
+                    <5>4. QED
+                        BY ONLY <5>2, <5>3, Z3
+                <4>5. QED
+                    BY ONLY <4>2, <4>3, <4>4, Z3
+            <3>8. DocOk(img)
+                BY <3>2, <3>7, Isa DEF DocOk
+            <3>9. Home(img, o)
+                BY <3>2, SameHome, Isa
+            <3>10. QED
+                BY ONLY <3>1, <3>8, <3>9, Z3
+        <2>5. QED
+            BY ONLY <2>2, <2>3, <2>4, Z3
+    <1>4. QED
+        BY ONLY <1>2, <1>3, Z3
+
 =============================================================================
