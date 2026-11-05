@@ -3423,4 +3423,54 @@ PROOF
     <1>4. QED
         BY ONLY <1>2, <1>3, Z3
 
+LEMMA MergeDoc ==
+    ASSUME NEW a, NEW b
+    PROVE  Merge(a, b).doc = b.doc
+PROOF
+    BY ONLY Z3 DEF Merge
+
+LEMMA SweepOk ==
+    ASSUME NEW doc, NEW t \in Nat, NEW o,
+           DocOk(doc), Home(doc, o)
+    PROVE  DocOk(Sweep(doc, t).doc)
+           /\ Home(Sweep(doc, t).doc, o)
+PROOF
+    <1> DEFINE s1 == SweepTimeoutAt(doc, t)
+    <1> DEFINE s2 == Merge(s1, SweepListeners(s1.doc, t))
+    <1> DEFINE s3 == Merge(s2, SweepCallbacks(s2.doc, t))
+    <1> DEFINE s4 == Merge(s3, SweepExpiresAt(s3.doc, t))
+    <1>1. Sweep(doc, t) = Merge(s4, SweepRetryAt(s4.doc, t))
+        BY ONLY Z3 DEF Sweep, s1, s2, s3, s4
+    <1>2. DocOk(s1.doc) /\ Home(s1.doc, o)
+        BY TimeOk, Z3
+    <1>3. s2.doc = SweepListeners(s1.doc, t).doc
+        BY ONLY MergeDoc DEF s2
+    <1>4. DocOk(SweepListeners(s1.doc, t).doc)
+          /\ Home(SweepListeners(s1.doc, t).doc, o)
+        BY <1>2, LsOk, Z3
+    <1>5. DocOk(s2.doc) /\ Home(s2.doc, o)
+        BY ONLY <1>3, <1>4, Z3
+    <1>6. s3.doc = SweepCallbacks(s2.doc, t).doc
+        BY ONLY MergeDoc DEF s3
+    <1>7. DocOk(SweepCallbacks(s2.doc, t).doc)
+          /\ Home(SweepCallbacks(s2.doc, t).doc, o)
+        BY <1>5, CbOk, Z3
+    <1>8. DocOk(s3.doc) /\ Home(s3.doc, o)
+        BY ONLY <1>6, <1>7, Z3
+    <1>9. s4.doc = SweepExpiresAt(s3.doc, t).doc
+        BY ONLY MergeDoc DEF s4
+    <1>10. DocOk(SweepExpiresAt(s3.doc, t).doc)
+           /\ Home(SweepExpiresAt(s3.doc, t).doc, o)
+        BY <1>8, ExpOk, Z3
+    <1>11. DocOk(s4.doc) /\ Home(s4.doc, o)
+        BY ONLY <1>9, <1>10, Z3
+    <1>12. Sweep(doc, t).doc = SweepRetryAt(s4.doc, t).doc
+        BY ONLY <1>1, MergeDoc, Z3
+    <1>13. DocOk(SweepRetryAt(s4.doc, t).doc)
+           /\ Home(SweepRetryAt(s4.doc, t).doc, o)
+        BY <1>11, RetryOk, Z3
+    <1>14. HIDE DEF Sweep, s1, s2, s3, s4
+    <1>15. QED
+        BY ONLY <1>12, <1>13, Z3
+
 =============================================================================
