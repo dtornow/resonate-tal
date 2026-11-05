@@ -1,7 +1,7 @@
 ----------------------------- MODULE SliceSweep -----------------------------
 (* The slice recorded for a placed document is the store a sweep step
    starts from. Its image is already in the abstract closure. *)
-EXTENDS SweepSent
+EXTENDS SweepSent, PlantStep
 
 LEMMA AppAt ==
     ASSUME NEW S, NEW e(_), NEW k \in S
@@ -212,5 +212,49 @@ PROOF
         BY <1>4, <1>7, Z3
     <1>9. QED
         BY <1>5, <1>8, Z3 DEF pre
+
+(* The perform write replaces one origin. That is a plant of the handler
+   document, and planting the swept document first does not change it. *)
+LEMMA PlantedPut ==
+    ASSUME NEW o \in Origin, NEW doc, NEW t, NEW body,
+           DOMAIN docs = Origin,
+           \A p \in Origin : \A i \in DOMAIN docs[p] : i.origin = p,
+           \A i \in DOMAIN body : i.origin = o,
+           \A i \in DOMAIN Sweep(doc, t).doc : i.origin = o,
+           docs' = [docs EXCEPT ![o] = body]
+    PROVE  LET mid == Sweep(doc, t).doc
+                pre == Store(Plant(Objects, o, mid),
+                             Deliver(outbox, Sweep(doc, t).sends))
+            IN  Objects' = Plant(pre.objects, o, body)
+PROOF
+    <1> DEFINE mid == Sweep(doc, t).doc
+    <1> DEFINE pre ==
+            Store(Plant(Objects, o, mid),
+                  Deliver(outbox, Sweep(doc, t).sends))
+    <1>1. o \in Origin
+        OBVIOUS
+    <1>2. DOMAIN docs = Origin
+        OBVIOUS
+    <1>3. \A p \in Origin : \A i \in DOMAIN docs[p] : i.origin = p
+        OBVIOUS
+    <1>4. \A i \in DOMAIN body : i.origin = o
+        OBVIOUS
+    <1>5. docs' = [docs EXCEPT ![o] = body]
+        OBVIOUS
+    <1>6. Obj([docs EXCEPT ![o] = body]) = Plant(Obj(docs), o, body)
+        BY ONLY <1>1, <1>2, <1>3, <1>4, PlantFun, Isa
+    <1>7. Objects = Obj(docs) /\ Objects' = Obj(docs')
+        BY ONLY ObjectsAre, Z3
+    <1>8. Objects' = Plant(Objects, o, body)
+        BY ONLY <1>5, <1>6, <1>7, Isa
+    <1>9. \A i \in DOMAIN mid : i.origin = o
+        BY Z3 DEF mid
+    <1>10. Plant(Plant(Objects, o, mid), o, body) = Plant(Objects, o, body)
+        BY ONLY <1>4, <1>9, PlantTwice, Isa
+    <1>11. HIDE DEF Sweep, Plant, Deliver
+    <1>12. pre.objects = Plant(Objects, o, mid)
+        BY ONLY Z3 DEF pre, Store, mid
+    <1>13. QED
+        BY ONLY <1>8, <1>10, <1>12, Isa DEF pre, mid
 
 =============================================================================
