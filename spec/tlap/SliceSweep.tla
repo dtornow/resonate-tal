@@ -1007,4 +1007,122 @@ PROOF
     <1>21. QED
         BY <1>11, <1>20, Z3
 
+LEMMA SameCallback ==
+    CallbackReq = P!CallbackReq
+PROOF
+    BY SameId DEF CallbackReq, P!CallbackReq, Id, P!Id
+
+(* A disabled callback leaves the origin document. An enabled callback
+   returns the planted document, which the abstract handler set contains. *)
+LEMMA CallbackSkip ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           req.awaiter.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           P!HandlePromiseRegisterCallback(base, req, t) = {}
+    PROVE  Plant(base, o, HandlePromiseRegisterCallback(req, doc, t).doc) = base
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterCallback(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterCallback(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.awaited.origin = o
+        OBVIOUS
+    <1>4. req.awaiter.origin = o
+        OBVIOUS
+    <1>5. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>6. a = {}
+        BY Z3 DEF a
+    <1>7. c.doc = doc
+        BY ONLY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6,
+                CallbackLift, Isa DEF c, a
+    <1>8. Plant(base, o, doc) = base
+        BY ONLY <1>1, <1>2, <1>5, PlantId, Isa
+    <1>9. QED
+        BY ONLY <1>7, <1>8, Isa DEF c
+
+LEMMA CallbackMem ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t, NEW planted,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           req.awaiter.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           req \in CallbackReq,
+           P!HandlePromiseRegisterCallback(base, req, t) # {},
+           planted = Plant(base, o, HandlePromiseRegisterCallback(req, doc, t).doc)
+    PROVE  planted \in P!Handled(base, t)
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterCallback(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterCallback(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.awaited.origin = o
+        OBVIOUS
+    <1>4. req.awaiter.origin = o
+        OBVIOUS
+    <1>5. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>6. req \in CallbackReq
+        OBVIOUS
+    <1>7. planted = Plant(base, o, HandlePromiseRegisterCallback(req, doc, t).doc)
+        OBVIOUS
+    <1>8. a # {}
+        BY Z3 DEF a
+    <1>9. c = HandlePromiseRegisterCallback(req, doc, t)
+        BY Z3 DEF c
+    <1>10. IF a = {} THEN c.doc = doc ELSE a = {Plant(base, o, c.doc)}
+        <2>1. ASSUME NEW rr, rr = req,
+                      rr.awaited.origin = o, rr.awaiter.origin = o
+              PROVE  LET u == HandlePromiseRegisterCallback(rr, doc, t)
+                          v == P!HandlePromiseRegisterCallback(base, rr, t)
+                      IN  IF v = {} THEN u.doc = doc
+                          ELSE v = {Plant(base, o, u.doc)}
+            BY <2>1, CallbackLift
+        <2>2. QED
+            BY <1>3, <1>4, <1>9, <2>1, Zenon DEF c, a
+    <1>6a. req \in P!CallbackReq
+        BY ONLY <1>6, SameCallback, Z3
+    <1> DEFINE p == Plant(base, o, c.doc)
+    <1> DEFINE S == { P!HandlePromiseRegisterCallback(base, r, t) :
+                        r \in P!CallbackReq }
+    <1>11. p = Plant(base, o, c.doc)
+        BY Z3 DEF p
+    <1>12. p = planted
+        BY ONLY <1>7, <1>9, <1>11, Isa
+    <1>13. a = {p}
+        BY ONLY <1>8, <1>10, Z3 DEF p
+    <1>14. p \in a
+        BY <1>13, Z3
+    <1>15. a \in { P!HandlePromiseRegisterCallback(base, r, t) :
+                     r \in P!CallbackReq }
+        BY <1>6a, Z3, IsaM("blast") DEF a
+    <1>16. a \in S /\ S # {}
+        BY <1>15, Z3 DEF S
+    <1>17. P!Flat(S) = UNION S
+        BY <1>16, Z3 DEF P!Flat, S
+    <1>18. p \in P!Flat(S)
+        BY <1>14, <1>16, <1>17, Z3
+    <1>19. HIDE DEF P!HandlePromiseCreate, P!HandlePromiseSettle,
+                P!HandlePromiseRegisterCallback,
+                P!HandlePromiseRegisterListener,
+                P!HandleTaskCreate, P!HandleTaskAcquire,
+                P!HandleTaskFence, P!HandleTaskHeartbeat,
+                P!HandleTaskSuspend, P!HandleTaskFulfill,
+                P!HandleTaskRelease, P!HandleTaskHalt,
+                P!HandleTaskContinue
+    <1>20. P!Flat(S) \subseteq P!Handled(base, t)
+        BY ONLY <1>16, Z3, Isa DEF S, P!Handled, P!Flat
+    <1>21. p \in P!Handled(base, t)
+        BY <1>18, <1>20, Z3
+    <1>22. QED
+        BY <1>12, <1>21, Z3
+
 =============================================================================
