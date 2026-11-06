@@ -789,4 +789,222 @@ PROOF
     <1>21. QED
         BY <1>11, <1>20, Z3
 
+LEMMA SameFulfill ==
+    [id : Id, version : Version, action : SettleReq]
+        = [id : P!Id, version : P!Version, action : P!SettleReq]
+PROOF
+    BY SameId, SameVersion, SameSettle
+       DEF Id, P!Id, Version, P!Version, SettleReq, P!SettleReq
+
+LEMMA SameListen ==
+    [awaited : Id, address : Address] = [awaited : P!Id, address : Address]
+PROOF
+    BY SameId DEF Id, P!Id
+
+(* A disabled fulfill leaves the origin document. An enabled fulfill
+   returns the planted document, which the abstract handler set contains. *)
+LEMMA FulfillSkip ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           P!HandleTaskFulfill(base, req, t) = {}
+    PROVE  Plant(base, o, HandleTaskFulfill(req, doc, t).doc) = base
+PROOF
+    <1> DEFINE c == HandleTaskFulfill(req, doc, t)
+    <1> DEFINE a == P!HandleTaskFulfill(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.id.origin = o
+        OBVIOUS
+    <1>4. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>5. a = {}
+        BY Z3 DEF a
+    <1>6. c.doc = doc
+        BY ONLY <1>1, <1>2, <1>3, <1>4, <1>5, FulfillLift, Isa DEF c, a
+    <1>7. Plant(base, o, doc) = base
+        BY ONLY <1>1, <1>2, <1>4, PlantId, Isa
+    <1>8. QED
+        BY ONLY <1>6, <1>7, Isa DEF c
+
+LEMMA FulfillMem ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t, NEW planted,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.id.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           req \in [id : Id, version : Version, action : SettleReq],
+           P!HandleTaskFulfill(base, req, t) # {},
+           planted = Plant(base, o, HandleTaskFulfill(req, doc, t).doc)
+    PROVE  planted \in P!Handled(base, t)
+PROOF
+    <1> DEFINE c == HandleTaskFulfill(req, doc, t)
+    <1> DEFINE a == P!HandleTaskFulfill(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.id.origin = o
+        OBVIOUS
+    <1>4. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>5. req \in [id : Id, version : Version, action : SettleReq]
+        OBVIOUS
+    <1>6. planted = Plant(base, o, HandleTaskFulfill(req, doc, t).doc)
+        OBVIOUS
+    <1>7. a # {}
+        BY Z3 DEF a
+    <1>8. c = HandleTaskFulfill(req, doc, t)
+        BY Z3 DEF c
+    <1>9. IF a = {} THEN c.doc = doc ELSE a = {Plant(base, o, c.doc)}
+        <2>1. ASSUME NEW rr, rr = req, rr.id.origin = o
+              PROVE  LET u == HandleTaskFulfill(rr, doc, t)
+                          v == P!HandleTaskFulfill(base, rr, t)
+                      IN  IF v = {} THEN u.doc = doc
+                          ELSE v = {Plant(base, o, u.doc)}
+            BY <2>1, FulfillLift
+        <2>2. QED
+            BY <1>3, <1>8, <2>1, Zenon DEF c, a
+    <1>5a. req \in [id : P!Id, version : P!Version, action : P!SettleReq]
+        BY ONLY <1>5, SameFulfill, Z3
+    <1> DEFINE p == Plant(base, o, c.doc)
+    <1> DEFINE S == { P!HandleTaskFulfill(base, r, t) : r \in [id : P!Id, version : P!Version, action : P!SettleReq] }
+    <1>10. p = Plant(base, o, c.doc)
+        BY Z3 DEF p
+    <1>11. p = planted
+        BY ONLY <1>6, <1>8, <1>10, Isa
+    <1>12. a = {p}
+        BY ONLY <1>7, <1>9, Z3 DEF p
+    <1>13. p \in a
+        BY <1>12, Z3
+    <1>14. a \in { P!HandleTaskFulfill(base, r, t) : r \in [id : P!Id, version : P!Version, action : P!SettleReq] }
+        BY <1>5a, Z3, IsaM("blast") DEF a
+    <1>15. a \in S /\ S # {}
+        BY <1>14, Z3 DEF S
+    <1>16. P!Flat(S) = UNION S
+        BY <1>15, Z3 DEF P!Flat, S
+    <1>17. p \in P!Flat(S)
+        BY <1>13, <1>15, <1>16, Z3
+    <1>18. HIDE DEF P!HandlePromiseCreate, P!HandlePromiseSettle,
+                P!HandlePromiseRegisterCallback,
+                P!HandlePromiseRegisterListener,
+                P!HandleTaskCreate, P!HandleTaskAcquire,
+                P!HandleTaskFence, P!HandleTaskHeartbeat,
+                P!HandleTaskSuspend, P!HandleTaskFulfill,
+                P!HandleTaskRelease, P!HandleTaskHalt,
+                P!HandleTaskContinue
+    <1>19. P!Flat(S) \subseteq P!Handled(base, t)
+        BY ONLY <1>15, Z3, Isa DEF S, P!Handled, P!Flat
+    <1>20. p \in P!Handled(base, t)
+        BY <1>17, <1>19, Z3
+    <1>21. QED
+        BY <1>11, <1>20, Z3
+
+(* A disabled listener leaves the origin document. An enabled listener
+   returns the planted document, which the abstract handler set contains. *)
+LEMMA ListenSkip ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           P!HandlePromiseRegisterListener(base, req, t) = {}
+    PROVE  Plant(base, o, HandlePromiseRegisterListener(req, doc, t).doc) = base
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterListener(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterListener(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.awaited.origin = o
+        OBVIOUS
+    <1>4. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>5. a = {}
+        BY Z3 DEF a
+    <1>6. c.doc = doc
+        BY ONLY <1>1, <1>2, <1>3, <1>4, <1>5, ListenerLift, Isa DEF c, a
+    <1>7. Plant(base, o, doc) = base
+        BY ONLY <1>1, <1>2, <1>4, PlantId, Isa
+    <1>8. QED
+        BY ONLY <1>6, <1>7, Isa DEF c
+
+LEMMA ListenMem ==
+    ASSUME NEW base, NEW o, NEW doc, NEW req, NEW t, NEW planted,
+           DOMAIN doc = { i \in DOMAIN base : i.origin = o },
+           \A i \in DOMAIN doc : base[i] = doc[i],
+           req.awaited.origin = o,
+           base = [ i \in DOMAIN base |-> base[i] ],
+           req \in [awaited : Id, address : Address],
+           P!HandlePromiseRegisterListener(base, req, t) # {},
+           planted = Plant(base, o, HandlePromiseRegisterListener(req, doc, t).doc)
+    PROVE  planted \in P!Handled(base, t)
+PROOF
+    <1> DEFINE c == HandlePromiseRegisterListener(req, doc, t)
+    <1> DEFINE a == P!HandlePromiseRegisterListener(base, req, t)
+    <1>1. DOMAIN doc = { i \in DOMAIN base : i.origin = o }
+        OBVIOUS
+    <1>2. \A i \in DOMAIN doc : base[i] = doc[i]
+        OBVIOUS
+    <1>3. req.awaited.origin = o
+        OBVIOUS
+    <1>4. base = [ i \in DOMAIN base |-> base[i] ]
+        OBVIOUS
+    <1>5. req \in [awaited : Id, address : Address]
+        OBVIOUS
+    <1>6. planted = Plant(base, o, HandlePromiseRegisterListener(req, doc, t).doc)
+        OBVIOUS
+    <1>7. a # {}
+        BY Z3 DEF a
+    <1>8. c = HandlePromiseRegisterListener(req, doc, t)
+        BY Z3 DEF c
+    <1>9. IF a = {} THEN c.doc = doc ELSE a = {Plant(base, o, c.doc)}
+        <2>1. ASSUME NEW rr, rr = req, rr.awaited.origin = o
+              PROVE  LET u == HandlePromiseRegisterListener(rr, doc, t)
+                          v == P!HandlePromiseRegisterListener(base, rr, t)
+                      IN  IF v = {} THEN u.doc = doc
+                          ELSE v = {Plant(base, o, u.doc)}
+            BY <2>1, ListenerLift
+        <2>2. QED
+            BY <1>3, <1>8, <2>1, Zenon DEF c, a
+    <1>5a. req \in [awaited : P!Id, address : Address]
+        BY ONLY <1>5, SameListen, Z3
+    <1> DEFINE p == Plant(base, o, c.doc)
+    <1> DEFINE S == { P!HandlePromiseRegisterListener(base, r, t) : r \in [awaited : P!Id, address : Address] }
+    <1>10. p = Plant(base, o, c.doc)
+        BY Z3 DEF p
+    <1>11. p = planted
+        BY ONLY <1>6, <1>8, <1>10, Isa
+    <1>12. a = {p}
+        BY ONLY <1>7, <1>9, Z3 DEF p
+    <1>13. p \in a
+        BY <1>12, Z3
+    <1>14. a \in { P!HandlePromiseRegisterListener(base, r, t) : r \in [awaited : P!Id, address : Address] }
+        BY <1>5a, Z3, IsaM("blast") DEF a
+    <1>15. a \in S /\ S # {}
+        BY <1>14, Z3 DEF S
+    <1>16. P!Flat(S) = UNION S
+        BY <1>15, Z3 DEF P!Flat, S
+    <1>17. p \in P!Flat(S)
+        BY <1>13, <1>15, <1>16, Z3
+    <1>18. HIDE DEF P!HandlePromiseCreate, P!HandlePromiseSettle,
+                P!HandlePromiseRegisterCallback,
+                P!HandlePromiseRegisterListener,
+                P!HandleTaskCreate, P!HandleTaskAcquire,
+                P!HandleTaskFence, P!HandleTaskHeartbeat,
+                P!HandleTaskSuspend, P!HandleTaskFulfill,
+                P!HandleTaskRelease, P!HandleTaskHalt,
+                P!HandleTaskContinue
+    <1>19. P!Flat(S) \subseteq P!Handled(base, t)
+        BY ONLY <1>15, Z3, Isa DEF S, P!Handled, P!Flat
+    <1>20. p \in P!Handled(base, t)
+        BY <1>17, <1>19, Z3
+    <1>21. QED
+        BY <1>11, <1>20, Z3
+
 =============================================================================
