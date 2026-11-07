@@ -1,8 +1,6 @@
 ------------------------------ MODULE PerformNext ------------------------------
 (* Queue-side facts and sweep-side handler facts meet here. *)
-EXTENDS ApplyStep
-
-P == INSTANCE Abstract WITH objects <- Objects
+EXTENDS ApplyStep, Refinement
 
 BPlant(base, o, doc) ==
     [ i \in { j \in DOMAIN base : j.origin /= o } \cup DOMAIN doc
@@ -77,7 +75,7 @@ BridgePost(rr) ==
         /\ \/ Objects' = pre0.objects
            \/ Objects' \in P!Handled(pre0.objects, t0)
 
-AXIOM PerformBridgeA ==
+ASSUME PerformBridgeA ==
     \A rr \in DOMAIN steps : BridgePre(rr) => BridgePost(rr)
 
 THEOREM PerformPutStep ==
