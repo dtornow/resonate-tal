@@ -235,8 +235,10 @@ PROOF
                swept == Sweep(docs[o], now)
                out == Handle(steps[r].ev, swept.doc, now)
                final == out.doc
-               puts == swept.puts \o out.puts
-               dels == swept.dels \o out.dels
+               before == TimerNames(docs[o], o)
+               after == TimerNames(final, o)
+               puts == SetToSeq(after \ before)
+               dels == SetToSeq(before \ after)
                sends == swept.sends \o out.sends
                pre == [n \in 1 .. Len(puts) |->
                           [tag |-> "PutTimeout", entry |-> puts[n]]]
@@ -255,7 +257,7 @@ PROOF
                                 ![r].at      = now,
                                 ![r].pending = seq,
                                 ![r].expect  = docs[o]]
-        BY Isa DEF Process, o, swept, out, final, puts, dels, sends,
+        BY Isa DEF Process, o, swept, out, final, before, after, puts, dels, sends,
                             pre, rec, post, seq
     <1>5. /\ steps'[r].phase = "perform"
           /\ steps'[r].at = now
@@ -652,8 +654,10 @@ PROOF
                swept == Sweep(docs[o], now)
                out == Handle(steps[r].ev, swept.doc, now)
                final == out.doc
-               puts == swept.puts \o out.puts
-               dels == swept.dels \o out.dels
+               before == TimerNames(docs[o], o)
+               after == TimerNames(final, o)
+               puts == SetToSeq(after \ before)
+               dels == SetToSeq(before \ after)
                sends == swept.sends \o out.sends
                pre == [n \in 1 .. Len(puts) |->
                           [tag |-> "PutTimeout", entry |-> puts[n]]]
@@ -665,7 +669,7 @@ PROOF
                                 ![r].at      = now,
                                 ![r].pending = seq,
                                 ![r].expect  = docs[o]]
-        BY Isa DEF Process, o, swept, out, final, puts, dels, sends,
+        BY Isa DEF Process, o, swept, out, final, before, after, puts, dels, sends,
                             pre, rec, post, seq
     <1>2. ASSUME NEW rr \in DOMAIN steps, NEW aa, NEW bb, NEW cc, NEW dd,
                  /\ rr = r
@@ -719,11 +723,11 @@ PROOF
             BY <1>2, <2>1 DEF SubmitExternal
         <2>3. QED
             BY <2>1, <2>2, AddKeeps
-    <1>3. ASSUME NEW e \in timeouts, SubmitInternal(e)
+    <1>3. ASSUME NEW name \in DOMAIN timeouts, SubmitInternal(name)
           PROVE  Queued'
         <2>1. PICK r \in Rid \ DOMAIN steps :
                   steps' = Set(steps, r,
-                               Fresh([tag |-> "Timeout", id |-> e.id, kind |-> e.kind]))
+                               Fresh([tag |-> "Timeout", origin |-> name[2]]))
             BY <1>3 DEF SubmitInternal
         <2>2. now' = now /\ r \notin DOMAIN steps
             BY <1>3, <2>1 DEF SubmitInternal
@@ -871,8 +875,8 @@ PROOF
                 BY <2>2
             <3>2. QED
                 BY <3>1, <1>2
-        <2>3. CASE \E e \in timeouts : SubmitInternal(e)
-            <3>1. PICK e \in timeouts : SubmitInternal(e)
+        <2>3. CASE \E name \in DOMAIN timeouts : SubmitInternal(name)
+            <3>1. PICK name \in DOMAIN timeouts : SubmitInternal(name)
                 BY <2>3
             <3>2. QED
                 BY <3>1, <1>3
@@ -937,11 +941,11 @@ PROOF
             BY <2>1
         <2>3. QED
             BY <2>1, <2>2, ShapeAdd
-    <1>3. ASSUME NEW e \in timeouts, SubmitInternal(e)
+    <1>3. ASSUME NEW name \in DOMAIN timeouts, SubmitInternal(name)
           PROVE  Shaped'
         <2>1. PICK r \in Rid \ DOMAIN steps :
                   steps' = Set(steps, r,
-                               Fresh([tag |-> "Timeout", id |-> e.id, kind |-> e.kind]))
+                               Fresh([tag |-> "Timeout", origin |-> name[2]]))
             BY <1>3 DEF SubmitInternal
         <2>2. r \notin DOMAIN steps
             BY <2>1
@@ -1029,8 +1033,8 @@ PROOF
                 BY <2>2
             <3>2. QED
                 BY <3>1, <1>2
-        <2>3. CASE \E e \in timeouts : SubmitInternal(e)
-            <3>1. PICK e \in timeouts : SubmitInternal(e)
+        <2>3. CASE \E name \in DOMAIN timeouts : SubmitInternal(name)
+            <3>1. PICK name \in DOMAIN timeouts : SubmitInternal(name)
                 BY <2>3
             <3>2. QED
                 BY <3>1, <1>3

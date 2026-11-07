@@ -3599,7 +3599,7 @@ PROOF
     <1>1. ASSUME NEW ev \in ExternalEvent, SubmitExternal(ev)
           PROVE  docs' = docs
         BY <1>1, Z3 DEF SubmitExternal
-    <1>2. ASSUME NEW e \in timeouts, SubmitInternal(e)
+    <1>2. ASSUME NEW name \in DOMAIN timeouts, SubmitInternal(name)
           PROVE  docs' = docs
         BY <1>2, Z3 DEF SubmitInternal
     <1>3. ASSUME NEW r \in DOMAIN steps, Process(r)
@@ -3632,8 +3632,8 @@ PROOF
                 BY <2>1, Z3
             <3>2. QED
                 BY <3>1, <1>1, Z3
-        <2>2. CASE \E e \in timeouts : SubmitInternal(e)
-            <3>1. PICK e \in timeouts : SubmitInternal(e)
+        <2>2. CASE \E name \in DOMAIN timeouts : SubmitInternal(name)
+            <3>1. PICK name \in DOMAIN timeouts : SubmitInternal(name)
                 BY <2>2, Z3
             <3>2. QED
                 BY <3>1, <1>2, Z3

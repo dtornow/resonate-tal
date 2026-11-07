@@ -8,9 +8,6 @@ EXTENDS PerformNext, SequenceTheorems, NaturalsInduction, TLAPS
 ASSUME OriginNamed == Origin /= {}
 ASSUME TimeoutOn == "Timeout" \in Implemented
 
-DeadlineOk ==
-    \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
-
 ASSUME DeadlineStepA ==
     DeadlineOk /\ [Next]_vars => DeadlineOk'
 
@@ -77,7 +74,7 @@ PROOF
     <1>1. ASSUME NEW ev \in ExternalEvent, SubmitExternal(ev)
           PROVE  UNCHANGED <<Objects, outbox, now>>
         BY <1>1 DEF SubmitExternal, Objects
-    <1>2. ASSUME NEW e \in timeouts, SubmitInternal(e)
+    <1>2. ASSUME NEW name \in DOMAIN timeouts, SubmitInternal(name)
           PROVE  UNCHANGED <<Objects, outbox, now>>
         BY <1>2 DEF SubmitInternal, Objects
     <1>3. ASSUME NEW r \in DOMAIN steps, Process(r)
@@ -115,8 +112,8 @@ PROOF
                 BY <2>1
             <3>2. QED
                 BY <3>1, <1>1
-        <2>2. CASE \E e \in timeouts : SubmitInternal(e)
-            <3>1. PICK e \in timeouts : SubmitInternal(e)
+        <2>2. CASE \E name \in DOMAIN timeouts : SubmitInternal(name)
+            <3>1. PICK name \in DOMAIN timeouts : SubmitInternal(name)
                 BY <2>2
             <3>2. QED
                 BY <3>1, <1>2
@@ -187,7 +184,16 @@ LEMMA DeadlineInit ==
     ASSUME Init
     PROVE  DeadlineOk
 PROOF
-    BY Z3 DEF Init, DeadlineOk
+    <1>1. timeouts = EmptyFn /\ EmptyFn = << >>
+        BY DEF Init, EmptyFn
+    <1>2. << >> \in Seq(Nat) /\ Len(<< >>) = 0
+        BY EmptySeq
+    <1>3. DOMAIN << >> = {}
+        BY <1>2, LenProperties
+    <1>4. DOMAIN timeouts = {}
+        BY <1>1, <1>3, Z3
+    <1>5. QED
+        BY <1>4 DEF DeadlineOk
 
 THEOREM DeadlineAlways ==
     ConcreteBehavior => []DeadlineOk
@@ -204,9 +210,11 @@ THEOREM InvariantsAlways ==
 PROOF
     <1>1. ConcreteBehavior => []DeadlineOk
         BY DeadlineAlways
-    <1>2. QED
-        BY <1>1, PlaceAlways, OriginNamed, TimeoutOn, PTL
-           DEF ConcreteBehavior, DeadlineOk
+    <1>2. Init /\ [][Next]_vars /\ []DeadlineOk
+          => [](Placed /\ Queued /\ Shaped /\ Typed)
+        BY PlaceAlways, OriginNamed, TimeoutOn, PTL DEF DeadlineOk
+    <1>3. QED
+        BY <1>1, <1>2, PTL DEF ConcreteBehavior
 
 THEOREM AbstractStepsAlways ==
     ConcreteBehavior => []AbsStep

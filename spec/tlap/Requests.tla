@@ -247,8 +247,7 @@ ExternalEvent ==
 
 InternalEvent ==
        {}
-    \cup On("Timeout", { [tag |-> "Timeout", id |-> i, kind |-> k]
-                         : i \in Id, k \in DeadlineKind})
+    \cup On("Timeout", { [tag |-> "Timeout", origin |-> o] : o \in Origin })
 
 Event ==
     ExternalEvent \cup InternalEvent

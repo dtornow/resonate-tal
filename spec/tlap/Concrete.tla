@@ -454,7 +454,7 @@ OriginOf(ev) ==
       [] ev.tag = "TaskContinue" ->
              ev.id.origin
       [] ev.tag = "Timeout" ->
-             ev.id.origin
+             ev.origin
 
 -----------------------------------------------------------------------------
 
@@ -463,6 +463,12 @@ Merge(a, b) ==
       puts  |-> a.puts  \o b.puts,
       dels  |-> a.dels  \o b.dels,
       sends |-> a.sends \o b.sends ]
+
+TimerNames(doc, origin) ==
+    LET armed ==
+            { x \in [id : DOMAIN doc, kind : DeadlineKind] :
+                Deadline(doc[x.id], x.kind) /= NoTime }
+    IN  { <<Deadline(doc[x.id], x.kind), origin>> : x \in armed }
 
 SweepTimeoutAt(doc, t) ==
     LET S  == { i \in DOMAIN doc :
@@ -663,23 +669,27 @@ SubmitExternal(ev) ==
     /\ \E r \in Rid \ DOMAIN steps : steps' = Set(steps, r, Fresh(ev))
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
-SubmitInternal(e) ==
-    /\ e \in timeouts
-    /\ e.at <= now
+SubmitInternal(name) ==
+    /\ name \in DOMAIN timeouts
+    /\ name[1] <= now
     /\ \E r \in Rid \ DOMAIN steps :
            steps' = Set(steps, r,
-                        Fresh([tag |-> "Timeout", id |-> e.id, kind |-> e.kind]))
+                        Fresh([tag |-> "Timeout", origin |-> name[2]]))
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
 Process(r) ==
     /\ r \in DOMAIN steps
     /\ steps[r].phase = "process"
+    \* Timer effects inside handlers are logical deadline metadata. Physical
+    \* empty timer documents are reconciled from the workflow before/after.
     /\ LET o     == OriginOf(steps[r].ev)
            swept == Sweep(docs[o], now)
            out   == Handle(steps[r].ev, swept.doc, now)
            final == out.doc
-           puts  == swept.puts  \o out.puts
-           dels  == swept.dels  \o out.dels
+           before == TimerNames(docs[o], o)
+           after  == TimerNames(final, o)
+           puts  == SetToSeq(after \ before)
+           dels  == SetToSeq(before \ after)
            sends == swept.sends \o out.sends
        IN  steps' = [steps EXCEPT ![r].phase   = "perform",
                                   ![r].at      = now,
@@ -709,7 +719,7 @@ PerformPutTimeout(r) ==
     /\ LET e    == Head(steps[r].pending)
            rest == [steps EXCEPT ![r].pending = Tail(@)]
        IN  /\ e.tag = "PutTimeout"
-           /\ timeouts' = timeouts \cup {e.entry}
+           /\ timeouts' = Set(timeouts, e.entry, EmptyFn)
            /\ steps'    = rest
            /\ UNCHANGED <<docs, outbox, now>>
 
@@ -744,7 +754,7 @@ PerformDelTimeout(r) ==
     /\ LET e    == Head(steps[r].pending)
            rest == [steps EXCEPT ![r].pending = Tail(@)]
        IN  /\ e.tag = "DelTimeout"
-           /\ timeouts' = timeouts \ {e.entry}
+           /\ timeouts' = Del(timeouts, e.entry)
            /\ steps'    = rest
            /\ UNCHANGED <<docs, outbox, now>>
 
@@ -766,14 +776,14 @@ Clock ==
 
 Init ==
     /\ docs     = [o \in Origin |-> EmptyFn]
-    /\ timeouts = {}
+    /\ timeouts = EmptyFn
     /\ outbox   = {}
     /\ steps    = EmptyFn
     /\ now      = 0
 
 Next ==
     \/ \E ev \in ExternalEvent : SubmitExternal(ev)
-    \/ \E e \in timeouts : SubmitInternal(e)
+    \/ \E name \in DOMAIN timeouts : SubmitInternal(name)
     \/ \E r \in DOMAIN steps : Process(r) \/ Perform(r) \/ Crash(r)
     \/ Clock
 
@@ -782,9 +792,9 @@ EventuallyStable ==
 
 Fairness ==
     /\ \A r  \in Rid             : WF_vars(Process(r) \/ Perform(r))
-    /\ \A i \in Id, k \in DeadlineKind :
-           SF_vars(\E e \in timeouts :
-                       e.id = i /\ e.kind = k /\ SubmitInternal(e))
+    /\ \A o \in Origin :
+           SF_vars(\E name \in DOMAIN timeouts :
+                       name[2] = o /\ SubmitInternal(name))
     /\ WF_vars(Clock)
     /\ EventuallyStable
 
@@ -812,13 +822,14 @@ TimerNameOK(name) ==
     /\ name[1] \in Time
     /\ name[2] \in Origin
 
-TimerDocuments ==
-    [ name \in { <<e.at, e.id.origin>> : e \in timeouts }
-      |-> EmptyFn ]
+DeadlineOk ==
+    \A name \in DOMAIN timeouts :
+        /\ TimerNameOK(name)
+        /\ timeouts[name] = EmptyFn
 
 Blob ==
     [ wf |-> docs,
-      tm |-> TimerDocuments ]
+      tm |-> timeouts ]
 
 DocumentTypeOK(doc, origin) ==
     /\ doc = [id \in DOMAIN doc |-> doc[id]]
@@ -838,9 +849,7 @@ WorkflowStorageTypeOK ==
 
 TimerStorageTypeOK ==
     /\ BlobShapeOK
-    /\ \A name \in DOMAIN Blob.tm :
-          /\ TimerNameOK(name)
-          /\ Blob.tm[name] = EmptyFn
+    /\ DeadlineOk
 
 StorageTypeOK ==
     /\ WorkflowStorageTypeOK
@@ -854,15 +863,16 @@ C_UnitCoherent ==
     A!UnitCoherent
 
 Armed(doc) ==
-    { e \in { [at |-> Deadline(doc[i], k), id |-> i, kind |-> k] :
-                i \in DOMAIN doc, k \in DeadlineKind } :
-        e.at /= NoTime }
+    LET armed ==
+            { x \in [id : DOMAIN doc, kind : DeadlineKind] :
+                Deadline(doc[x.id], x.kind) /= NoTime }
+    IN  { <<Deadline(doc[x.id], x.kind), x.id.origin>> : x \in armed }
 
 C_WheelSound ==
-    timeouts \subseteq Armed(Objects)
+    DOMAIN timeouts \subseteq Armed(Objects)
 
 C_WheelComplete ==
-    Armed(Objects) \subseteq timeouts
+    Armed(Objects) \subseteq DOMAIN timeouts
 
 SplitWrite ==
     \E r \in DOMAIN steps :

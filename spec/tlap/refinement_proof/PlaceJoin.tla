@@ -127,7 +127,7 @@ PROOF
 IdTags ==
     {"TaskAcquire", "TaskFence", "TaskSuspend", "TaskFulfill",
      "TaskRelease", "TaskHalt",
-     "TaskContinue", "Timeout"}
+     "TaskContinue"}
 
 HandledEv(ev) ==
     /\ ev \in Event
@@ -192,10 +192,8 @@ PROOF
         BY <1>8, Z3 DEF Event, ExternalEvent, InternalEvent, On
     <1>9. CASE ev.tag = "TaskContinue"
         BY <1>9, Z3 DEF Event, ExternalEvent, InternalEvent, On
-    <1>10. CASE ev.tag = "Timeout"
-        BY <1>10, Z3 DEF Event, ExternalEvent, InternalEvent, On
     <1>11. QED
-        BY <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, Z3
+        BY <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, Z3
            DEF IdTags
 
 LEMMA SettleId ==
@@ -275,14 +273,9 @@ PROOF
                 BY <2>10, Z3 DEF OriginOf
             <3>2. QED
                 BY <2>1, <3>1, FromId, Z3
-        <2>11. CASE ev.tag = "Timeout"
-            <3>1. OriginOf(ev) = ev.id.origin
-                BY <2>11, Z3 DEF OriginOf
-            <3>2. QED
-                BY <2>1, <3>1, FromId, Z3
         <2>12. QED
             BY <1>1, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10,
-               <2>11, Z3 DEF IdTags
+               Z3 DEF IdTags
     <1>2. CASE ev.tag = "PromiseCreate"
         <2>1. ev.req \in CreateReq
             BY <1>2, CreateOf, Z3
@@ -341,8 +334,16 @@ PROOF
             BY <2>1, ChooseOrig, Z3
         <2>4. QED
             BY <2>2, <2>3, Z3
+    <1>7a. CASE ev.tag = "Timeout"
+        <2>1. ev.origin \in Origin
+            BY <1>7a, Z3 DEF Event, InternalEvent, On
+        <2>2. OriginOf(ev) = ev.origin
+            BY <1>7a, Z3 DEF OriginOf
+        <2>3. QED
+            BY <2>1, <2>2, Z3
     <1>8. QED
-        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, Z3 DEF HandleTag, IdTags
+        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>7a,
+           Z3 DEF HandleTag, IdTags
 
 LEMMA TagIn ==
     ASSUME NEW ev \in Event
@@ -370,37 +371,31 @@ PROOF
         BY <1>3, <1>4, Z3 DEF HandledEv
 
 LEMMA TimeoutMem ==
-    ASSUME NEW a \in Id, NEW b \in DeadlineKind, NEW rec,
-           rec = [tag |-> "Timeout", id |-> a, kind |-> b]
-    PROVE  rec \in { [tag |-> "Timeout", id |-> i, kind |-> k]
-                     : i \in Id, k \in DeadlineKind }
+    ASSUME NEW o \in Origin, NEW rec,
+           rec = [tag |-> "Timeout", origin |-> o]
+    PROVE  rec \in { [tag |-> "Timeout", origin |-> p] : p \in Origin }
 PROOF
     BY Z3, IsaM("blast")
 
 LEMMA TimeoutIn ==
-    ASSUME NEW ii \in Id, NEW kk \in DeadlineKind, "Timeout" \in Implemented
-    PROVE  /\ [tag |-> "Timeout", id |-> ii, kind |-> kk] \in Event
-           /\ [tag |-> "Timeout", id |-> ii, kind |-> kk].tag = "Timeout"
-           /\ [tag |-> "Timeout", id |-> ii, kind |-> kk].id = ii
+    ASSUME NEW oo \in Origin, "Timeout" \in Implemented
+    PROVE  /\ [tag |-> "Timeout", origin |-> oo] \in Event
+           /\ [tag |-> "Timeout", origin |-> oo].tag = "Timeout"
+           /\ [tag |-> "Timeout", origin |-> oo].origin = oo
 PROOF
-    <1> DEFINE nev == [tag |-> "Timeout", id |-> ii, kind |-> kk]
-    <1> DEFINE S == { [tag |-> "Timeout", id |-> i, kind |-> k]
-                      : i \in Id, k \in DeadlineKind }
-    <1>1. ii \in Id /\ kk \in DeadlineKind /\ "Timeout" \in Implemented
+    <1> DEFINE nev == [tag |-> "Timeout", origin |-> oo]
+    <1> DEFINE S == { [tag |-> "Timeout", origin |-> p] : p \in Origin }
+    <1>1. oo \in Origin /\ "Timeout" \in Implemented
         BY Z3
-    <1>2. nev = [tag |-> "Timeout", id |-> ii, kind |-> kk]
+    <1>2. nev = [tag |-> "Timeout", origin |-> oo]
         BY Zenon DEF nev
-    <1>3. \E i \in Id, k \in DeadlineKind :
-            nev = [tag |-> "Timeout", id |-> i, kind |-> k]
+    <1>3. \E p \in Origin : nev = [tag |-> "Timeout", origin |-> p]
         BY <1>1, <1>2, Z3
-    <1>4. PICK i \in Id, k \in DeadlineKind :
-            nev = [tag |-> "Timeout", id |-> i, kind |-> k]
+    <1>4. PICK p \in Origin : nev = [tag |-> "Timeout", origin |-> p]
         BY <1>3, Z3
-    <1>5. nev \in { [tag |-> "Timeout", id |-> i, kind |-> k]
-                    : i \in Id, k \in DeadlineKind }
+    <1>5. nev \in { [tag |-> "Timeout", origin |-> p] : p \in Origin }
         BY <1>4, TimeoutMem, Z3
-    <1>6. S = { [tag |-> "Timeout", id |-> i, kind |-> k]
-                : i \in Id, k \in DeadlineKind }
+    <1>6. S = { [tag |-> "Timeout", origin |-> p] : p \in Origin }
         BY ONLY DEF S
     <1>7. nev \in S
         BY <1>5, <1>6, Z3
@@ -408,7 +403,7 @@ PROOF
         BY <1>1, Z3 DEF On
     <1>9. nev \in InternalEvent
         BY <1>7, <1>8, Z3 DEF InternalEvent, S
-    <1>10. nev.tag = "Timeout" /\ nev.id = ii
+    <1>10. nev.tag = "Timeout" /\ nev.origin = oo
         BY <1>2, Zenon
     <1>11. QED
         BY <1>9, <1>10, Z3 DEF Event, nev
@@ -670,23 +665,20 @@ PROOF
 
 LEMMA IntTyped ==
     ASSUME Typed,
-           NEW e,
-           e.id \in Id,
-           e.kind \in DeadlineKind,
+           NEW origin \in Origin,
            "Timeout" \in Implemented,
            Origin /= {},
            \E r \in Rid \ DOMAIN steps :
                 steps' = Set(steps, r,
-                             Fresh([tag |-> "Timeout", id |-> e.id,
-                                    kind |-> e.kind]))
+                             Fresh([tag |-> "Timeout", origin |-> origin]))
     PROVE  Typed'
 PROOF
-    <1> DEFINE nev == [tag |-> "Timeout", id |-> e.id, kind |-> e.kind]
+    <1> DEFINE nev == [tag |-> "Timeout", origin |-> origin]
     <1>1. "Timeout" \in Implemented /\ Origin /= {}
         BY Z3
-    <1>2. e.id \in Id /\ e.kind \in DeadlineKind
+    <1>2. origin \in Origin
         BY Z3
-    <1>3. nev \in Event /\ nev.tag = "Timeout" /\ nev.id = e.id
+    <1>3. nev \in Event /\ nev.tag = "Timeout" /\ nev.origin = origin
         BY <1>1, <1>2, TimeoutIn, Z3 DEF nev
     <1>4. HandledEv(nev)
         BY <1>1, <1>3, KnownEv, Z3
@@ -708,8 +700,10 @@ PROOF
                swept == Sweep(docs[o], now)
                out == Handle(steps[r].ev, swept.doc, now)
                final == out.doc
-               puts == swept.puts \o out.puts
-               dels == swept.dels \o out.dels
+               before == TimerNames(docs[o], o)
+               after == TimerNames(final, o)
+               puts == SetToSeq(after \ before)
+               dels == SetToSeq(before \ after)
                sends == swept.sends \o out.sends
                pre == [n \in 1 .. Len(puts) |->
                           [tag |-> "PutTimeout", entry |-> puts[n]]]
@@ -721,7 +715,7 @@ PROOF
                                 ![r].at      = now,
                                 ![r].pending = seq,
                                 ![r].expect  = docs[o]]
-        BY Isa DEF Process, o, swept, out, final, puts, dels, sends,
+        BY Isa DEF Process, o, swept, out, final, before, after, puts, dels, sends,
                             pre, rec, post, seq
     <1>2. ASSUME NEW rr \in DOMAIN steps, NEW aa, NEW bb, NEW cc, NEW dd,
                  /\ rr = r
@@ -742,7 +736,7 @@ LEMMA TypeNext ==
     ASSUME Typed, Shaped, [Next]_vars,
            Origin /= {},
            "Timeout" \in Implemented,
-           \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
+           DeadlineOk
     PROVE  Typed'
 PROOF
     <1>1. ASSUME UNCHANGED vars
@@ -754,14 +748,13 @@ PROOF
     <1>2. ASSUME NEW ev \in ExternalEvent, SubmitExternal(ev)
           PROVE  Typed'
         BY <1>2, ExtTyped, Isa
-    <1>3. ASSUME NEW e \in timeouts, SubmitInternal(e)
+    <1>3. ASSUME NEW name \in DOMAIN timeouts, SubmitInternal(name)
           PROVE  Typed'
-        <2>1. e.id \in Id /\ e.kind \in DeadlineKind
+        <2>1. name[2] \in Origin
             BY <1>3, Z3
         <2>2. \E r \in Rid \ DOMAIN steps :
                   steps' = Set(steps, r,
-                               Fresh([tag |-> "Timeout", id |-> e.id,
-                                      kind |-> e.kind]))
+                               Fresh([tag |-> "Timeout", origin |-> name[2]]))
             BY <1>3, Zenon DEF SubmitInternal
         <2>3. QED
             BY <1>3, <2>1, <2>2, IntTyped, Zenon
@@ -851,8 +844,8 @@ PROOF
                 BY <2>2, Z3
             <3>2. QED
                 BY <3>1, <1>2, Z3
-        <2>3. CASE \E e \in timeouts : SubmitInternal(e)
-            <3>1. PICK e \in timeouts : SubmitInternal(e)
+        <2>3. CASE \E name \in DOMAIN timeouts : SubmitInternal(name)
+            <3>1. PICK name \in DOMAIN timeouts : SubmitInternal(name)
                 BY <2>3, Z3
             <3>2. QED
                 BY <3>1, <1>3, Z3
@@ -890,7 +883,7 @@ LEMMA PlaceHold ==
     ASSUME Placed, Queued, Typed, Shaped, [Next]_vars,
            Origin /= {},
            "Timeout" \in Implemented,
-           \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
+           DeadlineOk
     PROVE  Placed' /\ Queued' /\ Shaped' /\ Typed'
 PROOF
     <1>1. Placed'
@@ -906,7 +899,7 @@ THEOREM PlaceAlways ==
     ASSUME Origin /= {},
            "Timeout" \in Implemented
     PROVE  Init /\ [][Next]_vars
-            /\ [](\A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind)
+            /\ []DeadlineOk
             => [](Placed /\ Queued /\ Shaped /\ Typed)
 PROOF
     <1>1. Init => Placed /\ Queued /\ Shaped /\ Typed
@@ -923,7 +916,7 @@ PROOF
         <2>2. QED
             BY <2>1, Z3
     <1>2. ASSUME Placed /\ Queued /\ Shaped /\ Typed,
-                 \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind,
+                 DeadlineOk,
                  [Next]_vars
           PROVE  Placed' /\ Queued' /\ Shaped' /\ Typed'
         BY <1>2, PlaceHold, Z3
