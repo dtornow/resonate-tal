@@ -38,6 +38,8 @@ sufficient. Left out, it has to say what goes wrong without one.
 |---|---|
 | `Abstract.tla` | the machine: no fence, effects applied one at a time |
 | `Concrete.tla` | the same protocol under one-document-per-origin and a CAS |
+| `refinement_claim/Refinement.tla` | the concrete-to-abstract refinement claim |
+| `refinement_proof/` | the TLAPS refinement argument and supporting lemmas |
 | `*.cfg` | models small enough to check and large enough to interleave |
 
 `Implemented` is the knob that keeps them comparable: a CONSTANT naming which

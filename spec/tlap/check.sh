@@ -31,6 +31,10 @@ if [ ! -f "$TLA_TOOLS" ]; then
 fi
 
 SPEC=${1:-Abstract}
+TLA=$SPEC.tla
+if [ "$SPEC" = "Refinement" ]; then
+    TLA=refinement_claim/Refinement.tla
+fi
 echo "== $SPEC =="
 if [ $# -le 1 ]; then
     CFG=$SPEC.cfg
@@ -49,4 +53,4 @@ fi
 # tree will kill a running check by deleting the pool underneath it.
 java -Dtlc2.tool.impl.Tool.cdot=true -XX:+UseParallelGC -cp "$TLA_TOOLS" tlc2.TLC \
      -config "$CFG" -workers 4 -deadlock \
-     -metadir "${TLC_METADIR:-/tmp/tlc-$SPEC}" "$SPEC.tla"
+     -metadir "${TLC_METADIR:-/tmp/tlc-$SPEC}" "$TLA"
