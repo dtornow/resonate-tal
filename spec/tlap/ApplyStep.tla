@@ -223,4 +223,45 @@ PROOF
     <1>13. QED
         BY <1>4, <1>5, <1>7, <1>11, <1>12, Z3 DEF e, t, doc
 
+LEMMA PutBody ==
+    ASSUME Queued,
+           NEW r \in DOMAIN steps,
+           PerformPut(r)
+    PROVE  LET e   == Head(steps[r].pending)
+                t   == steps[r].at
+                doc == steps[r].expect
+                ev  == steps[r].ev
+                o   == OriginOf(ev)
+            IN  /\ e.body = Handle(ev, Sweep(doc, t).doc, t).doc
+                /\ docs[o] = doc
+                /\ docs' = [docs EXCEPT ![o] = e.body]
+PROOF
+    <1> DEFINE e == Head(steps[r].pending)
+    <1> DEFINE t == steps[r].at
+    <1> DEFINE doc == steps[r].expect
+    <1> DEFINE ev == steps[r].ev
+    <1> DEFINE o == OriginOf(ev)
+    <1>1. steps[r].phase = "perform"
+        BY Z3 DEF PerformPut
+    <1>2. Match(steps[r], now)
+        BY <1>1, Z3 DEF Queued
+    <1>3. steps[r].pending \in Seq(Range(steps[r].pending))
+          /\ Docs(steps[r].pending,
+                  Image(steps[r]).doc, Image(steps[r]).sends)
+        BY <1>2, Z3 DEF Match
+    <1>4. steps[r].pending # << >> /\ e.tag = "PutDocument"
+        BY PutWrite, Z3 DEF e, o, ev, PerformPut
+    <1>5. e.body = Image(steps[r]).doc
+        BY <1>3, <1>4, HeadBody, Z3 DEF e
+    <1>6. Image(steps[r]).doc
+            = Handle(ev, Sweep(doc, t).doc, t).doc
+        BY ImageDoc, Z3 DEF ev, doc, t
+    <1>7. e.body = Handle(ev, Sweep(doc, t).doc, t).doc
+        BY <1>5, <1>6, Z3
+    <1>8. docs[o] = doc
+          /\ docs' = [docs EXCEPT ![o] = e.body]
+        BY PutWrite, Z3 DEF e, o, ev, doc
+    <1>9. QED
+        BY <1>7, <1>8 DEF e, t, doc, ev, o
+
 =============================================================================
