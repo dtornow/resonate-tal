@@ -6,8 +6,6 @@
 EXTENDS PerformNext, SequenceTheorems, NaturalsInduction, TLAPS
 
 ASSUME OriginNamed == Origin /= {}
-ASSUME PromiseSearchOff == "PromiseSearch" \notin Implemented
-ASSUME TaskSearchOff == "TaskSearch" \notin Implemented
 ASSUME TimeoutOn == "Timeout" \in Implemented
 
 DeadlineOk ==
@@ -207,8 +205,8 @@ PROOF
     <1>1. SpecR => []DeadlineOk
         BY DeadlineAlways
     <1>2. QED
-        BY <1>1, PlaceAlways, OriginNamed, PromiseSearchOff,
-           TaskSearchOff, TimeoutOn, PTL DEF SpecR, DeadlineOk
+        BY <1>1, PlaceAlways, OriginNamed, TimeoutOn, PTL
+           DEF SpecR, DeadlineOk
 
 THEOREM AbstractStepsAlways ==
     SpecR => []AbsStep

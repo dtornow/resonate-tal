@@ -11,8 +11,6 @@ EXTENDS Concrete, SequenceTheorems, TLAPS
 ASSUME TtlNat == Ttl \subseteq Nat
 ASSUME RetryNat == RetryTimeout \in Nat
 ASSUME Origin /= {}
-ASSUME "PromiseSearch" \notin Implemented
-ASSUME "TaskSearch" \notin Implemented
 
 Guard(obj) ==
     /\ obj.promise.listeners \subseteq Address
@@ -657,14 +655,6 @@ PROOF
 
 (* ------------------------------------------------------------------ *)
 
-LEMMA GetOk ==
-    ASSUME NEW ev, NEW doc, NEW t, NEW o,
-           DocOk(doc), Home(doc, o)
-    PROVE  DocOk(HandlePromiseGet(ev, doc, t).doc)
-           /\ Home(HandlePromiseGet(ev, doc, t).doc, o)
-PROOF
-    BY SkipBoth, Isa DEF HandlePromiseGet
-
 LEMMA CreateOk ==
     ASSUME NEW req, NEW doc, NEW t \in Nat, NEW o,
            DocOk(doc), Home(doc, o),
@@ -991,14 +981,6 @@ PROOF
             BY ONLY <2>5, <2>6, Z3
     <1>3. QED
         BY ONLY <1>1, <1>2, Z3
-
-LEMMA TGetOk ==
-    ASSUME NEW ev, NEW doc, NEW t, NEW o,
-           DocOk(doc), Home(doc, o)
-    PROVE  DocOk(HandleTaskGet(ev, doc, t).doc)
-           /\ Home(HandleTaskGet(ev, doc, t).doc, o)
-PROOF
-    BY SkipBoth, Isa DEF HandleTaskGet
 
 LEMMA TCreateOk ==
     ASSUME NEW req, NEW doc, NEW t \in Nat, NEW o,
@@ -2193,9 +2175,9 @@ PROOF
         BY ONLY <1>2, <1>3, Z3
 
 HandleTag ==
-    { "PromiseGet", "PromiseCreate", "PromiseSettle",
+    { "PromiseCreate", "PromiseSettle",
       "PromiseRegisterCallback", "PromiseRegisterListener",
-      "TaskGet", "TaskCreate", "TaskAcquire", "TaskFence",
+      "TaskCreate", "TaskAcquire", "TaskFence",
       "TaskHeartbeat", "TaskSuspend", "TaskFulfill",
       "TaskRelease", "TaskHalt", "TaskContinue", "Timeout" }
 
@@ -2237,11 +2219,6 @@ LEMMA HandleOk ==
     PROVE  DocOk(Handle(ev, doc, t).doc)
            /\ Home(Handle(ev, doc, t).doc, o)
 PROOF
-    <1>1. CASE ev.tag = "PromiseGet"
-        <2>1. Handle(ev, doc, t) = HandlePromiseGet(ev, doc, t)
-            BY ONLY <1>1, Z3 DEF Handle
-        <2>2. QED
-            BY <2>1, GetOk, Isa
     <1>2. CASE ev.tag = "PromiseCreate"
         <2>1. Handle(ev, doc, t) = HandlePromiseCreate(ev.req, doc, t)
             BY ONLY <1>2, Z3 DEF Handle
@@ -2272,11 +2249,6 @@ PROOF
             BY <1>5, LsAddr, Z3
         <2>3. QED
             BY <2>1, <2>2, RegLsOk, Isa
-    <1>6. CASE ev.tag = "TaskGet"
-        <2>1. Handle(ev, doc, t) = HandleTaskGet(ev, doc, t)
-            BY ONLY <1>6, Z3 DEF Handle
-        <2>2. QED
-            BY <2>1, TGetOk, Isa
     <1>7. CASE ev.tag = "TaskCreate"
         <2>1. Handle(ev, doc, t) = HandleTaskCreate(ev, doc, t)
             BY ONLY <1>7, Z3 DEF Handle
@@ -2341,7 +2313,7 @@ PROOF
         <2>2. QED
             BY <2>1, SkipBoth, Isa
     <1>17. QED
-        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9,
+        BY <1>2, <1>3, <1>4, <1>5, <1>7, <1>8, <1>9,
            <1>10, <1>11, <1>12, <1>13, <1>14, <1>15, <1>16, Z3
            DEF HandleTag
 

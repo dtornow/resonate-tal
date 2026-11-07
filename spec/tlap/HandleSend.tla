@@ -3,9 +3,9 @@
 EXTENDS Concrete, TLAPS
 
 Tags ==
-    { "PromiseGet", "PromiseCreate", "PromiseSettle",
+    { "PromiseCreate", "PromiseSettle",
       "PromiseRegisterCallback", "PromiseRegisterListener",
-      "TaskGet", "TaskCreate", "TaskAcquire", "TaskFence",
+      "TaskCreate", "TaskAcquire", "TaskFence",
       "TaskHeartbeat", "TaskSuspend", "TaskFulfill",
       "TaskRelease", "TaskHalt", "TaskContinue", "Timeout" }
 
@@ -13,8 +13,6 @@ LEMMA HandleSends ==
     ASSUME NEW ev, NEW doc, NEW t, ev.tag \in Tags
     PROVE  Handle(ev, doc, t).sends = << >>
 PROOF
-    <1>1. CASE ev.tag = "PromiseGet"
-        BY <1>1 DEF Handle, HandlePromiseGet, Skip
     <1>2. CASE ev.tag = "PromiseCreate"
         BY <1>2, Zenon DEF Handle, HandlePromiseCreate, Skip
     <1>3. CASE ev.tag = "PromiseSettle"
@@ -23,8 +21,6 @@ PROOF
         BY <1>4, Zenon DEF Handle, HandlePromiseRegisterCallback, Skip
     <1>5. CASE ev.tag = "PromiseRegisterListener"
         BY <1>5, Zenon DEF Handle, HandlePromiseRegisterListener, Skip
-    <1>6. CASE ev.tag = "TaskGet"
-        BY <1>6 DEF Handle, HandleTaskGet, Skip
     <1>7. CASE ev.tag = "TaskCreate"
         BY <1>7, Zenon DEF Handle, HandleTaskCreate, Skip
     <1>8. CASE ev.tag = "TaskAcquire"
@@ -47,7 +43,7 @@ PROOF
     <1>16. CASE ev.tag = "Timeout"
         BY <1>16 DEF Handle, Skip
     <1>17. QED
-        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10,
+        BY <1>2, <1>3, <1>4, <1>5, <1>7, <1>8, <1>9, <1>10,
            <1>11, <1>12, <1>13, <1>14, <1>15, <1>16 DEF Tags
 
 =============================================================================

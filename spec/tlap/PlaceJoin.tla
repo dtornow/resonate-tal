@@ -125,8 +125,8 @@ PROOF
    that id inside a request, an action, or an awaited promise, and a
    heartbeat names an origin by itself. *)
 IdTags ==
-    {"PromiseGet", "TaskGet", "TaskAcquire", "TaskFence",
-     "TaskSuspend", "TaskFulfill", "TaskRelease", "TaskHalt",
+    {"TaskAcquire", "TaskFence", "TaskSuspend", "TaskFulfill",
+     "TaskRelease", "TaskHalt",
      "TaskContinue", "Timeout"}
 
 HandledEv(ev) ==
@@ -178,10 +178,6 @@ LEMMA EvId ==
     ASSUME NEW ev \in Event, ev.tag \in IdTags
     PROVE  ev.id \in Id
 PROOF
-    <1>1. CASE ev.tag = "PromiseGet"
-        BY <1>1, Z3 DEF Event, ExternalEvent, InternalEvent, On
-    <1>2. CASE ev.tag = "TaskGet"
-        BY <1>2, Z3 DEF Event, ExternalEvent, InternalEvent, On
     <1>3. CASE ev.tag = "TaskAcquire"
         BY <1>3, Z3 DEF Event, ExternalEvent, InternalEvent, On
     <1>4. CASE ev.tag = "TaskFence"
@@ -199,7 +195,7 @@ PROOF
     <1>10. CASE ev.tag = "Timeout"
         BY <1>10, Z3 DEF Event, ExternalEvent, InternalEvent, On
     <1>11. QED
-        BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, Z3
+        BY <1>3, <1>4, <1>5, <1>6, <1>7, <1>8, <1>9, <1>10, Z3
            DEF IdTags
 
 LEMMA SettleId ==
@@ -244,16 +240,6 @@ PROOF
     <1>1. CASE ev.tag \in IdTags
         <2>1. ev.id \in Id
             BY <1>1, EvId, Z3
-        <2>2. CASE ev.tag = "PromiseGet"
-            <3>1. OriginOf(ev) = ev.id.origin
-                BY <2>2, Z3 DEF OriginOf
-            <3>2. QED
-                BY <2>1, <3>1, FromId, Z3
-        <2>3. CASE ev.tag = "TaskGet"
-            <3>1. OriginOf(ev) = ev.id.origin
-                BY <2>3, Z3 DEF OriginOf
-            <3>2. QED
-                BY <2>1, <3>1, FromId, Z3
         <2>4. CASE ev.tag = "TaskAcquire"
             <3>1. OriginOf(ev) = ev.id.origin
                 BY <2>4, Z3 DEF OriginOf
@@ -295,7 +281,7 @@ PROOF
             <3>2. QED
                 BY <2>1, <3>1, FromId, Z3
         <2>12. QED
-            BY <1>1, <2>2, <2>3, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10,
+            BY <1>1, <2>4, <2>5, <2>6, <2>7, <2>8, <2>9, <2>10,
                <2>11, Z3 DEF IdTags
     <1>2. CASE ev.tag = "PromiseCreate"
         <2>1. ev.req \in CreateReq
@@ -359,16 +345,11 @@ PROOF
         BY <1>1, <1>2, <1>3, <1>4, <1>5, <1>6, <1>7, Z3 DEF HandleTag, IdTags
 
 LEMMA TagIn ==
-    ASSUME NEW ev \in Event,
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented
+    ASSUME NEW ev \in Event
     PROVE  ev.tag \in HandleTag
 PROOF
-    <1>1. On("PromiseSearch", {[tag |-> "PromiseSearch"]}) = {}
-          /\ On("TaskSearch", {[tag |-> "TaskSearch"]}) = {}
-        BY Z3 DEF On
     <1>2. CASE ev \in ExternalEvent
-        BY <1>1, <1>2, Z3 DEF ExternalEvent, On, HandleTag
+        BY <1>2, Z3 DEF ExternalEvent, On, HandleTag
     <1>3. CASE ev \in InternalEvent
         BY <1>3, Z3 DEF InternalEvent, On, HandleTag
     <1>4. QED
@@ -376,17 +357,13 @@ PROOF
 
 LEMMA KnownEv ==
     ASSUME NEW ev \in Event,
-           Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented
+           Origin /= {}
     PROVE  HandledEv(ev)
 PROOF
-    <1>1. "PromiseSearch" \notin Implemented /\ "TaskSearch" \notin Implemented
-        BY Z3
     <1>2. Origin /= {}
         BY Z3
     <1>3. ev.tag \in HandleTag
-        BY <1>1, TagIn, Z3
+        BY TagIn, Z3
     <1>4. OriginOf(ev) \in Origin
         BY <1>2, <1>3, OrigIn, Z3
     <1>5. QED
@@ -672,19 +649,15 @@ LEMMA ExtTyped ==
     ASSUME Typed,
            NEW ev \in ExternalEvent,
            SubmitExternal(ev),
-           Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented
+           Origin /= {}
     PROVE  Typed'
 PROOF
-    <1>1. "PromiseSearch" \notin Implemented /\ "TaskSearch" \notin Implemented
-        BY Z3
     <1>2. Origin /= {}
         BY Z3
     <1>3. ev \in Event
         BY Z3 DEF Event
     <1>4. HandledEv(ev)
-        BY <1>1, <1>2, <1>3, KnownEv, Z3
+        BY <1>2, <1>3, KnownEv, Z3
     <1>5. PICK r \in Rid \ DOMAIN steps : steps' = Set(steps, r, Fresh(ev))
         BY Zenon DEF SubmitExternal
     <1>6. r \notin DOMAIN steps
@@ -702,8 +675,6 @@ LEMMA IntTyped ==
            e.kind \in DeadlineKind,
            "Timeout" \in Implemented,
            Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented,
            \E r \in Rid \ DOMAIN steps :
                 steps' = Set(steps, r,
                              Fresh([tag |-> "Timeout", id |-> e.id,
@@ -712,8 +683,6 @@ LEMMA IntTyped ==
 PROOF
     <1> DEFINE nev == [tag |-> "Timeout", id |-> e.id, kind |-> e.kind]
     <1>1. "Timeout" \in Implemented /\ Origin /= {}
-          /\ "PromiseSearch" \notin Implemented
-          /\ "TaskSearch" \notin Implemented
         BY Z3
     <1>2. e.id \in Id /\ e.kind \in DeadlineKind
         BY Z3
@@ -772,8 +741,6 @@ PROOF
 LEMMA TypeNext ==
     ASSUME Typed, Shaped, [Next]_vars,
            Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented,
            "Timeout" \in Implemented,
            \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
     PROVE  Typed'
@@ -922,8 +889,6 @@ PROOF
 LEMMA PlaceHold ==
     ASSUME Placed, Queued, Typed, Shaped, [Next]_vars,
            Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented,
            "Timeout" \in Implemented,
            \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
     PROVE  Placed' /\ Queued' /\ Shaped' /\ Typed'
@@ -939,8 +904,6 @@ PROOF
 
 THEOREM PlaceAlways ==
     ASSUME Origin /= {},
-           "PromiseSearch" \notin Implemented,
-           "TaskSearch" \notin Implemented,
            "Timeout" \in Implemented
     PROVE  Init /\ [][Next]_vars
             /\ [](\A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind)
