@@ -807,8 +807,48 @@ C_NowBound ==
 C_VersionBound ==
     \A i \in UNION { DOMAIN docs[o] : o \in Origin } : docs[i.origin][i].task.version <= MaxVersion
 
+TimerNameOK(name) ==
+    /\ name = <<name[1], name[2]>>
+    /\ name[1] \in Time
+    /\ name[2] \in Origin
+
+TimerDocuments ==
+    [ name \in { <<e.at, e.id.origin>> : e \in timeouts }
+      |-> EmptyFn ]
+
+Blob ==
+    [ wf |-> docs,
+      tm |-> TimerDocuments ]
+
+DocumentTypeOK(doc, origin) ==
+    /\ doc = [id \in DOMAIN doc |-> doc[id]]
+    /\ DOMAIN doc \subseteq Id
+    /\ \A id \in DOMAIN doc :
+          /\ id.origin = origin
+          /\ doc[id] \in Object
+
+BlobShapeOK ==
+    /\ DOMAIN Blob = {"wf", "tm"}
+    /\ DOMAIN Blob.wf = Origin
+
+WorkflowStorageTypeOK ==
+    /\ BlobShapeOK
+    /\ \A origin \in Origin :
+          DocumentTypeOK(Blob.wf[origin], origin)
+
+TimerStorageTypeOK ==
+    /\ BlobShapeOK
+    /\ \A name \in DOMAIN Blob.tm :
+          /\ TimerNameOK(name)
+          /\ Blob.tm[name] = EmptyFn
+
+StorageTypeOK ==
+    /\ WorkflowStorageTypeOK
+    /\ TimerStorageTypeOK
+
 C_TypeOK ==
-    A!TypeOK
+    /\ A!TypeOK
+    /\ StorageTypeOK
 
 C_UnitCoherent ==
     A!UnitCoherent

@@ -147,7 +147,7 @@ NoTask ==
 Promise ==
     [ state     : PromiseState,
       param     : Value,
-      value     : Value,
+      value     : Value \cup {NoValue},
       tags      : Tags,
       timeoutAt : Time,                  \* deadline -- armed as "promise"
       createdAt : Time,
@@ -157,7 +157,7 @@ Promise ==
 
 Task ==
     [ state     : TaskState,
-      version   : Version,               \* the fencing token
+      version   : Nat,                   \* stored fencing token; requests use bounded Version
       ttl       : Ttl \cup {NoTime},     \* the WORKER's number: lease asked for
       pid       : Pid \cup {NoPid},
       leaseTimeoutAt : Time \cup {NoTime},    \* deadline -- armed as "lease"
