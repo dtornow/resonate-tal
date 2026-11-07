@@ -9,10 +9,12 @@ EXTENDS Concrete
 
 P == INSTANCE Abstract WITH objects <- Objects
 
-SpecR ==
+(* Named entry points for TLC; the TLAPS theorem states the implication
+   directly instead of hiding either side behind these names. *)
+ConcreteBehavior ==
     Init /\ [][Next]_vars
 
-Refines ==
+AbstractSafety ==
     P!Safety
 
 ===============================================================================

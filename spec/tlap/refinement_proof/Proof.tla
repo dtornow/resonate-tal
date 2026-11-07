@@ -190,40 +190,40 @@ PROOF
     BY Z3 DEF Init, DeadlineOk
 
 THEOREM DeadlineAlways ==
-    SpecR => []DeadlineOk
+    ConcreteBehavior => []DeadlineOk
 PROOF
     <1>1. Init => DeadlineOk
         BY DeadlineInit
     <1>2. DeadlineOk /\ [Next]_vars => DeadlineOk'
         BY DeadlineStepA
     <1>3. QED
-        BY <1>1, <1>2, PTL DEF SpecR
+        BY <1>1, <1>2, PTL DEF ConcreteBehavior
 
 THEOREM InvariantsAlways ==
-    SpecR => [](Placed /\ Queued /\ Shaped /\ Typed)
+    ConcreteBehavior => [](Placed /\ Queued /\ Shaped /\ Typed)
 PROOF
-    <1>1. SpecR => []DeadlineOk
+    <1>1. ConcreteBehavior => []DeadlineOk
         BY DeadlineAlways
     <1>2. QED
         BY <1>1, PlaceAlways, OriginNamed, TimeoutOn, PTL
-           DEF SpecR, DeadlineOk
+           DEF ConcreteBehavior, DeadlineOk
 
 THEOREM AbstractStepsAlways ==
-    SpecR => []AbsStep
+    ConcreteBehavior => []AbsStep
 PROOF
     <1>1. Placed /\ Queued /\ Shaped /\ Typed /\ [Next]_vars => AbsStep
         BY AbstractStep, Z3
-    <1>2. SpecR => [](Placed /\ Queued /\ Shaped /\ Typed)
+    <1>2. ConcreteBehavior => [](Placed /\ Queued /\ Shaped /\ Typed)
         BY InvariantsAlways
     <1>3. QED
-        BY <1>1, <1>2, PTL DEF SpecR
+        BY <1>1, <1>2, PTL DEF ConcreteBehavior
 
-THEOREM SpecRImpliesRefines ==
-    SpecR => Refines
+THEOREM ConcreteRefinesAbstract ==
+    Init /\ [][Next]_vars => P!Safety
 PROOF
-    <1>1. SpecR => P!Init
-        BY InitImplies DEF SpecR
-    <1>2. SpecR => []AbsStep
+    <1>1. ConcreteBehavior => P!Init
+        BY InitImplies DEF ConcreteBehavior
+    <1>2. ConcreteBehavior => []AbsStep
         BY AbstractStepsAlways
     <1>3. P!vars = AbsVars
         BY DEF P!vars, AbsVars
@@ -231,11 +231,11 @@ PROOF
         BY ONLY DEF AbsVars, P!vars
     <1>4. AbsStep <=> (P!Next \/ UNCHANGED P!vars)
         BY ONLY <1>4a, Z3 DEF AbsStep
-    <1>5. SpecR => [](P!Next \/ UNCHANGED P!vars)
+    <1>5. ConcreteBehavior => [](P!Next \/ UNCHANGED P!vars)
         BY <1>2, <1>4, PTL
-    <1>6. SpecR => [][P!Next]_P!vars
+    <1>6. ConcreteBehavior => [][P!Next]_P!vars
         BY <1>5
     <1>7. QED
-        BY <1>1, <1>6, PTL DEF Refines, P!Safety
+        BY <1>1, <1>6, PTL DEF ConcreteBehavior, P!Safety
 
 ===============================================================================
