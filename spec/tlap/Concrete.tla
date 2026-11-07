@@ -67,9 +67,6 @@ Skip(doc) ==
       dels  |-> << >>,
       sends |-> << >> ]
 
-HandlePromiseGet(req, doc, t) ==
-    Skip(doc)
-
 HandlePromiseCreate(req, doc, t) ==
     IF req.id \in DOMAIN doc THEN
         Skip(doc)
@@ -151,9 +148,6 @@ HandlePromiseRegisterListener(req, doc, t) ==
                   puts  |-> << >>,
                   dels  |-> << >>,
                   sends |-> << >> ]
-
-HandleTaskGet(req, doc, t) ==
-    Skip(doc)
 
 HandleTaskCreate(req, doc, t) ==
     IF ~req.action.tags.targeted THEN
@@ -401,9 +395,7 @@ HandleTaskContinue(req, doc, t) ==
                   sends |-> << >> ]
 
 Handle(ev, doc, t) ==
-    CASE ev.tag = "PromiseGet" ->
-             HandlePromiseGet(ev, doc, t)
-      [] ev.tag = "PromiseCreate" ->
+    CASE ev.tag = "PromiseCreate" ->
              HandlePromiseCreate(ev.req, doc, t)
       [] ev.tag = "PromiseSettle" ->
              HandlePromiseSettle(ev.req, doc, t)
@@ -411,8 +403,6 @@ Handle(ev, doc, t) ==
              HandlePromiseRegisterCallback(ev.req, doc, t)
       [] ev.tag = "PromiseRegisterListener" ->
              HandlePromiseRegisterListener(ev, doc, t)
-      [] ev.tag = "TaskGet" ->
-             HandleTaskGet(ev, doc, t)
       [] ev.tag = "TaskCreate" ->
              HandleTaskCreate(ev, doc, t)
       [] ev.tag = "TaskAcquire" ->
@@ -437,9 +427,7 @@ Handle(ev, doc, t) ==
 -----------------------------------------------------------------------------
 
 OriginOf(ev) ==
-    CASE ev.tag = "PromiseGet" ->
-             ev.id.origin
-      [] ev.tag = "PromiseCreate" ->
+    CASE ev.tag = "PromiseCreate" ->
              ev.req.id.origin
       [] ev.tag = "PromiseSettle" ->
              ev.req.id.origin
@@ -447,8 +435,6 @@ OriginOf(ev) ==
              ev.req.awaited.origin
       [] ev.tag = "PromiseRegisterListener" ->
              ev.awaited.origin
-      [] ev.tag = "TaskGet" ->
-             ev.id.origin
       [] ev.tag = "TaskCreate" ->
              ev.action.id.origin
       [] ev.tag = "TaskAcquire" ->

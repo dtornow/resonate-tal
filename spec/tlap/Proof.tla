@@ -3,7 +3,22 @@
    not land a document is a protocol step, or it leaves the protocol's
    variables where they are. Landing the document is a sweep at the recorded
    decision time and then the handler. *)
-EXTENDS Refinement, SequenceTheorems, NaturalsInduction, TLAPS
+EXTENDS PerformNext, SequenceTheorems, NaturalsInduction, TLAPS
+
+ASSUME OriginNamed == Origin /= {}
+ASSUME TimeoutOn == "Timeout" \in Implemented
+
+DeadlineOk ==
+    \A e \in timeouts : e.id \in Id /\ e.kind \in DeadlineKind
+
+ASSUME DeadlineStepA ==
+    DeadlineOk /\ [Next]_vars => DeadlineOk'
+
+AbsVars ==
+    <<Objects, outbox, now>>
+
+AbsStep ==
+    P!Next \/ UNCHANGED AbsVars
 
 (* The initial states coincide: an empty document is an empty store, and both
    clocks start at 0. *)
@@ -92,8 +107,8 @@ PROOF
           PROVE  UNCHANGED <<Objects, outbox, now>>
         BY <1>9 DEF PerformMiss, Objects
     <1>10. ASSUME NEW r \in DOMAIN steps, PerformPut(r)
-           PROVE  FALSE
-        BY <1>10
+           PROVE  P!Next \/ UNCHANGED <<Objects, outbox, now>>
+        BY <1>10, Z3
     <1>11. QED
         <2>1. CASE \E ev \in ExternalEvent : SubmitExternal(ev)
             <3>1. PICK ev \in ExternalEvent : SubmitExternal(ev)
@@ -140,5 +155,87 @@ LEMMA Stutter ==
     PROVE  UNCHANGED <<Objects, outbox, now>>
 PROOF
     BY DEF vars, Objects
+
+LEMMA AbstractStep ==
+    ASSUME Placed, Queued, Typed, [Next]_vars
+    PROVE  AbsStep
+PROOF
+    <1>1. CASE UNCHANGED vars
+        <2>1. UNCHANGED <<Objects, outbox, now>>
+            BY <1>1, Stutter
+        <2>2. QED
+            BY <2>1 DEF AbsStep, AbsVars
+    <1>2. CASE Next
+        <2>1. CASE \A r \in DOMAIN steps : ~PerformPut(r)
+            <3>1. P!Next \/ UNCHANGED <<Objects, outbox, now>>
+                BY <1>2, <2>1, QuietStep
+            <3>2. QED
+                BY <3>1 DEF AbsStep, AbsVars
+        <2>2. CASE \E r \in DOMAIN steps : PerformPut(r)
+            <3>1. PICK r \in DOMAIN steps : PerformPut(r)
+                BY <2>2
+            <3>2. P!Next \/ UNCHANGED <<Objects, outbox, now>>
+                BY <3>1, PerformPutStep
+            <3>3. QED
+                BY <3>2 DEF AbsStep, AbsVars
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>3. QED
+        BY <1>1, <1>2 DEF vars
+
+LEMMA DeadlineInit ==
+    ASSUME Init
+    PROVE  DeadlineOk
+PROOF
+    BY Z3 DEF Init, DeadlineOk
+
+THEOREM DeadlineAlways ==
+    SpecR => []DeadlineOk
+PROOF
+    <1>1. Init => DeadlineOk
+        BY DeadlineInit
+    <1>2. DeadlineOk /\ [Next]_vars => DeadlineOk'
+        BY DeadlineStepA
+    <1>3. QED
+        BY <1>1, <1>2, PTL DEF SpecR
+
+THEOREM InvariantsAlways ==
+    SpecR => [](Placed /\ Queued /\ Shaped /\ Typed)
+PROOF
+    <1>1. SpecR => []DeadlineOk
+        BY DeadlineAlways
+    <1>2. QED
+        BY <1>1, PlaceAlways, OriginNamed, TimeoutOn, PTL
+           DEF SpecR, DeadlineOk
+
+THEOREM AbstractStepsAlways ==
+    SpecR => []AbsStep
+PROOF
+    <1>1. Placed /\ Queued /\ Shaped /\ Typed /\ [Next]_vars => AbsStep
+        BY AbstractStep, Z3
+    <1>2. SpecR => [](Placed /\ Queued /\ Shaped /\ Typed)
+        BY InvariantsAlways
+    <1>3. QED
+        BY <1>1, <1>2, PTL DEF SpecR
+
+THEOREM SpecRImpliesRefines ==
+    SpecR => Refines
+PROOF
+    <1>1. SpecR => P!Init
+        BY InitImplies DEF SpecR
+    <1>2. SpecR => []AbsStep
+        BY AbstractStepsAlways
+    <1>3. P!vars = AbsVars
+        BY DEF P!vars, AbsVars
+    <1>4a. UNCHANGED AbsVars <=> UNCHANGED P!vars
+        BY ONLY DEF AbsVars, P!vars
+    <1>4. AbsStep <=> (P!Next \/ UNCHANGED P!vars)
+        BY ONLY <1>4a, Z3 DEF AbsStep
+    <1>5. SpecR => [](P!Next \/ UNCHANGED P!vars)
+        BY <1>2, <1>4, PTL
+    <1>6. SpecR => [][P!Next]_P!vars
+        BY <1>5
+    <1>7. QED
+        BY <1>1, <1>6, PTL DEF Refines, P!Safety
 
 ===============================================================================

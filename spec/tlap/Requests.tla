@@ -21,7 +21,6 @@ EXTENDS Integers, Sequences, FiniteSets
   @typeAlias: outEntry = { address: ADDR, message: $message };
   @typeAlias: msgKey = { kind: Str, id: $id, address: ADDR };
   @typeAlias: createReq = { id: $id, timeoutAt: Int, param: VALUE, tags: $tags };
-  @typeAlias: getReq = { id: $id };
   @typeAlias: drainReq = { id: $id, awaiter: $id };
   @typeAlias: listenerDrainReq = { id: $id, address: ADDR };
   @typeAlias: listenerReq = { awaited: $id, address: ADDR };
@@ -232,13 +231,10 @@ On(tag, S) ==
 
 ExternalEvent ==
        {}
-    \cup On("PromiseGet", { [tag |-> "PromiseGet", id |-> i] : i \in Id})
     \cup On("PromiseCreate", { [tag |-> "PromiseCreate", req |-> r] : r \in CreateReq})
     \cup On("PromiseSettle", { [tag |-> "PromiseSettle", req |-> r] : r \in SettleReq})
     \cup On("PromiseRegisterCallback", { [tag |-> "PromiseRegisterCallback", req |-> r] : r \in CallbackReq})
     \cup On("PromiseRegisterListener", { [tag |-> "PromiseRegisterListener", awaited |-> i, address |-> a] : i \in Id, a \in Address})
-    \cup On("PromiseSearch", { [tag |-> "PromiseSearch"]})
-    \cup On("TaskGet", { [tag |-> "TaskGet", id |-> i] : i \in Id})
     \cup On("TaskCreate", { [tag |-> "TaskCreate", pid |-> p, ttl |-> t, action |-> r] : p \in Pid, t \in Ttl, r \in CreateReq})
     \cup On("TaskAcquire", { [tag |-> "TaskAcquire", id |-> i, version |-> v, pid |-> p, ttl |-> t] : i \in Id, v \in Version, p \in Pid, t \in Ttl})
     \cup On("TaskFence", { [tag |-> "TaskFence", id |-> i, version |-> v, action |-> a] : i \in Id, v \in Version, a \in FenceAction})
@@ -248,7 +244,6 @@ ExternalEvent ==
     \cup On("TaskRelease", { [tag |-> "TaskRelease", id |-> i, version |-> v] : i \in Id, v \in Version})
     \cup On("TaskHalt", { [tag |-> "TaskHalt", id |-> i] : i \in Id})
     \cup On("TaskContinue", { [tag |-> "TaskContinue", id |-> i] : i \in Id})
-    \cup On("TaskSearch", { [tag |-> "TaskSearch"]})
 
 InternalEvent ==
        {}
