@@ -332,28 +332,25 @@ UnionResumes(obj, R) ==
                     retryTimeoutAt |-> obj.task.retryTimeoutAt,
                     resumes        |-> obj.task.resumes \cup R ] ]
 
-CallbackObjects(o, awaitedId, awaiterId, t) ==
-    LET awaited    == Project(o[awaitedId], t)
+CallbackObjects(o, awaitedId, awaiterId) ==
+    LET awaited    == Project(o[awaitedId], now)
         newAwaited == WithoutCallbacks(awaited, {awaiterId})
         struck     == Write(o, awaitedId, newAwaited)
     IN  IF awaiterId \notin DOMAIN o THEN
             struck
         ELSE
-            LET awaiter == Project(struck[awaiterId], t)
+            LET awaiter == Project(struck[awaiterId], now)
             IN  IF awaiter.task.state \in {"none", "fulfilled"} THEN
                     Write(struck, awaiterId, awaiter)
                 ELSE IF awaiter.task.state = "suspended" THEN
                     Write(struck, awaiterId,
-                          WakeSuspended(awaiter, {awaitedId}, t))
+                          WakeSuspended(awaiter, {awaitedId}, now))
                 ELSE
                     Write(struck, awaiterId,
                           UnionResumes(awaiter, {awaitedId}))
 
 NetworkWrite(n, msg) ==
     { kept \in n : MsgKey(kept) /= MsgKey(msg) } \cup {msg}
-
-At(t) ==
-    t \in 0 .. now
 
 Store(os) ==
     /\ objects' = os
@@ -364,33 +361,30 @@ Store(os) ==
    writes the network. Retry and listener processing may either write their
    message or lose it, while still consuming/rearming the obligation. *)
 
-PromiseTimeout(id, t) ==
-    /\ At(t)
+PromiseTimeout(id) ==
     /\ id \in DOMAIN objects
     /\ objects[id].promise.state = "pending"
-    /\ objects[id].promise.timeoutAt <= t
-    /\ objects' = Write(objects, id, Project(objects[id], t))
+    /\ objects[id].promise.timeoutAt <= now
+    /\ objects' = Write(objects, id, Project(objects[id], now))
     /\ UNCHANGED <<network, now>>
 
-LeaseTimeout(id, t) ==
-    /\ At(t)
+LeaseTimeout(id) ==
     /\ id \in DOMAIN objects
     /\ LET old == objects[id]
        IN  /\ old.task.state = "acquired"
            /\ old.task.leaseTimeoutAt /= NoTime
-           /\ old.task.leaseTimeoutAt <= t
-           /\ Project(old, t).promise.state = "pending"
+           /\ old.task.leaseTimeoutAt <= now
+           /\ Project(old, now).promise.state = "pending"
            /\ objects' =
                 Write(objects, id,
                       [old EXCEPT !.task.state          = "pending",
                                   !.task.pid            = NoPid,
                                   !.task.ttl            = NoTime,
                                   !.task.leaseTimeoutAt = NoTime,
-                                  !.task.retryTimeoutAt = t])
+                                  !.task.retryTimeoutAt = now])
     /\ UNCHANGED <<network, now>>
 
-RetryTimeout(id, t) ==
-    /\ At(t)
+RetryTimeout(id) ==
     /\ id \in DOMAIN objects
     /\ LET old == objects[id]
            msg == [ address |-> old.promise.tags.target,
@@ -399,21 +393,20 @@ RetryTimeout(id, t) ==
                                   version |-> old.task.version ] ]
        IN  /\ old.task.state = "pending"
            /\ old.task.retryTimeoutAt /= NoTime
-           /\ old.task.retryTimeoutAt <= t
-           /\ Project(old, t).promise.state = "pending"
+           /\ old.task.retryTimeoutAt <= now
+           /\ Project(old, now).promise.state = "pending"
            /\ objects' =
                 Write(objects, id,
                       [old EXCEPT
-                          !.task.retryTimeoutAt = t + RetryDelay])
+                          !.task.retryTimeoutAt = now + RetryDelay])
            /\ network' \in {network, NetworkWrite(network, msg)}
     /\ UNCHANGED now
 
-ProcessCallback(awaited, awaiter, t) ==
-    /\ At(t)
+ProcessCallback(awaited, awaiter) ==
     /\ awaited \in DOMAIN objects
     /\ awaiter \in objects[awaited].promise.callbacks
-    /\ Project(objects[awaited], t).promise.state /= "pending"
-    /\ objects' = CallbackObjects(objects, awaited, awaiter, t)
+    /\ Project(objects[awaited], now).promise.state /= "pending"
+    /\ objects' = CallbackObjects(objects, awaited, awaiter)
     /\ UNCHANGED <<network, now>>
 
 (* There is deliberately no decision-time parameter. A listener is eligible
@@ -437,57 +430,44 @@ ProcessListener(id, address) ==
 (* Direct request actions. A disabled handler disables the corresponding
    action; [][Next]_vars still admits protocol stuttering. *)
 
-PromiseCreate(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandlePromiseCreate(objects, req, t) : Store(os)
+PromiseCreate(req) ==
+    \E os \in HandlePromiseCreate(objects, req, now) : Store(os)
 
-PromiseSettle(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandlePromiseSettle(objects, req, t) : Store(os)
+PromiseSettle(req) ==
+    \E os \in HandlePromiseSettle(objects, req, now) : Store(os)
 
-PromiseRegisterCallback(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandlePromiseRegisterCallback(objects, req, t) : Store(os)
+PromiseRegisterCallback(req) ==
+    \E os \in HandlePromiseRegisterCallback(objects, req, now) : Store(os)
 
-PromiseRegisterListener(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandlePromiseRegisterListener(objects, req, t) : Store(os)
+PromiseRegisterListener(req) ==
+    \E os \in HandlePromiseRegisterListener(objects, req, now) : Store(os)
 
-TaskCreate(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskCreate(objects, req, t) : Store(os)
+TaskCreate(req) ==
+    \E os \in HandleTaskCreate(objects, req, now) : Store(os)
 
-TaskAcquire(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskAcquire(objects, req, t) : Store(os)
+TaskAcquire(req) ==
+    \E os \in HandleTaskAcquire(objects, req, now) : Store(os)
 
-TaskFence(id, version, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskFence(objects, id, version, t) : Store(os)
+TaskFence(id, version) ==
+    \E os \in HandleTaskFence(objects, id, version, now) : Store(os)
 
-TaskHeartbeat(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskHeartbeat(objects, req, t) : Store(os)
+TaskHeartbeat(req) ==
+    \E os \in HandleTaskHeartbeat(objects, req, now) : Store(os)
 
-TaskSuspend(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskSuspend(objects, req, t) : Store(os)
+TaskSuspend(req) ==
+    \E os \in HandleTaskSuspend(objects, req, now) : Store(os)
 
-TaskFulfill(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskFulfill(objects, req, t) : Store(os)
+TaskFulfill(req) ==
+    \E os \in HandleTaskFulfill(objects, req, now) : Store(os)
 
-TaskRelease(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskRelease(objects, req, t) : Store(os)
+TaskRelease(req) ==
+    \E os \in HandleTaskRelease(objects, req, now) : Store(os)
 
-TaskHalt(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskHalt(objects, req, t) : Store(os)
+TaskHalt(req) ==
+    \E os \in HandleTaskHalt(objects, req, now) : Store(os)
 
-TaskContinue(req, t) ==
-    /\ At(t)
-    /\ \E os \in HandleTaskContinue(objects, req, t) : Store(os)
+TaskContinue(req) ==
+    \E os \in HandleTaskContinue(objects, req, now) : Store(os)
 
 Clock ==
     /\ now' = now + 1
@@ -501,17 +481,17 @@ Init ==
     /\ now = 0
 
 AnyPromiseTimeout ==
-    \E id \in Id, t \in 0 .. now : PromiseTimeout(id, t)
+    \E id \in Id : PromiseTimeout(id)
 
 AnyLeaseTimeout ==
-    \E id \in Id, t \in 0 .. now : LeaseTimeout(id, t)
+    \E id \in Id : LeaseTimeout(id)
 
 AnyRetryTimeout ==
-    \E id \in Id, t \in 0 .. now : RetryTimeout(id, t)
+    \E id \in Id : RetryTimeout(id)
 
 AnyCallback ==
-    \E awaited, awaiter \in Id, t \in 0 .. now :
-        ProcessCallback(awaited, awaiter, t)
+    \E awaited, awaiter \in Id :
+        ProcessCallback(awaited, awaiter)
 
 AnyListener ==
     \E id \in Id, address \in Address : ProcessListener(id, address)
@@ -522,38 +502,26 @@ Next ==
     \/ AnyRetryTimeout
     \/ AnyCallback
     \/ AnyListener
-    \/ \E req \in CreateReq, t \in 0 .. now :
-          PromiseCreate(req, t)
-    \/ \E req \in SettleReq, t \in 0 .. now :
-          PromiseSettle(req, t)
-    \/ \E req \in CallbackReq, t \in 0 .. now :
-          PromiseRegisterCallback(req, t)
-    \/ \E req \in [awaited : Id, address : Address], t \in 0 .. now :
-          PromiseRegisterListener(req, t)
-    \/ \E req \in [pid : Pid, ttl : Ttl, action : CreateReq],
-          t \in 0 .. now :
-          TaskCreate(req, t)
-    \/ \E req \in [id : Id, version : Version, pid : Pid, ttl : Ttl],
-          t \in 0 .. now :
-          TaskAcquire(req, t)
-    \/ \E id \in Id, version \in Version, t \in 0 .. now :
-          TaskFence(id, version, t)
-    \/ \E req \in [pid : Pid, tasks : SUBSET TaskRefT],
-          t \in 0 .. now :
-          TaskHeartbeat(req, t)
+    \/ \E req \in CreateReq : PromiseCreate(req)
+    \/ \E req \in SettleReq : PromiseSettle(req)
+    \/ \E req \in CallbackReq : PromiseRegisterCallback(req)
+    \/ \E req \in [awaited : Id, address : Address] :
+          PromiseRegisterListener(req)
+    \/ \E req \in [pid : Pid, ttl : Ttl, action : CreateReq] :
+          TaskCreate(req)
+    \/ \E req \in [id : Id, version : Version, pid : Pid, ttl : Ttl] :
+          TaskAcquire(req)
+    \/ \E id \in Id, version \in Version : TaskFence(id, version)
+    \/ \E req \in [pid : Pid, tasks : SUBSET TaskRefT] :
+          TaskHeartbeat(req)
     \/ \E req \in [id : Id, version : Version,
-                    actions : SUBSET CallbackReq],
-          t \in 0 .. now :
-          TaskSuspend(req, t)
-    \/ \E req \in [id : Id, version : Version, action : SettleReq],
-          t \in 0 .. now :
-          TaskFulfill(req, t)
-    \/ \E req \in TaskRefT, t \in 0 .. now :
-          TaskRelease(req, t)
-    \/ \E req \in [id : Id], t \in 0 .. now :
-          TaskHalt(req, t)
-    \/ \E req \in [id : Id], t \in 0 .. now :
-          TaskContinue(req, t)
+                    actions : SUBSET CallbackReq] :
+          TaskSuspend(req)
+    \/ \E req \in [id : Id, version : Version, action : SettleReq] :
+          TaskFulfill(req)
+    \/ \E req \in TaskRefT : TaskRelease(req)
+    \/ \E req \in [id : Id] : TaskHalt(req)
+    \/ \E req \in [id : Id] : TaskContinue(req)
     \/ Clock
 
 Fairness ==
