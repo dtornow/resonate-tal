@@ -17,9 +17,16 @@ cd "$(dirname "$0")"
 TLA_TOOLS=${TLA_TOOLS:-tla2tools.jar}
 APALACHE=${APALACHE:-apalache-mc}
 
+SPEC=${1:-Abstract}
+TLA=$SPEC.tla
+case "$SPEC" in
+    Concrete)   TLA=ConcreteView.tla ;;
+    Refinement) TLA=refinement_claim/Refinement.tla ;;
+esac
+
 if command -v "$APALACHE" >/dev/null 2>&1; then
     echo "== types =="
-    "$APALACHE" typecheck Abstract.tla 2>&1 | grep -E "purrfect|error|\[FAILED\]" || true
+    "$APALACHE" typecheck "$TLA" 2>&1 | grep -E "purrfect|error|\[FAILED\]" || true
 else
     echo "== types == (skipped: $APALACHE not on PATH)"
 fi
@@ -30,12 +37,6 @@ if [ ! -f "$TLA_TOOLS" ]; then
     exit 1
 fi
 
-SPEC=${1:-Abstract}
-TLA=$SPEC.tla
-case "$SPEC" in
-    Concrete)   TLA=ConcreteView.tla ;;
-    Refinement) TLA=refinement_claim/Refinement.tla ;;
-esac
 echo "== $SPEC =="
 if [ $# -le 1 ]; then
     CFG=$SPEC.cfg
