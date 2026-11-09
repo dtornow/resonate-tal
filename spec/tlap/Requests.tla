@@ -58,7 +58,7 @@ CONSTANTS
     Implemented,
     NoPid,
     NoAddr,
-    RetryTimeout,
+    RetryDelay,
     MaxTime,
     MaxVersion
 
@@ -67,10 +67,10 @@ ASSUME NoAddr  \notin Address
 ASSUME NoValue \notin Value
 ASSUME MaxTime    >= 0
 ASSUME MaxVersion >= 0
-(* The sweep is a fixpoint. A retry timeout re-arms at now + RetryTimeout,
+(* The sweep is a fixpoint. A retry timeout re-arms at now + RetryDelay,
    which is only in the future -- and so retires its own trigger -- while
-   RetryTimeout is positive. *)
-ASSUME RetryTimeout > 0
+   RetryDelay is positive. *)
+ASSUME RetryDelay > 0
 (* A sweep counts due items. That count is a number only when the sets it
    ranges over are finite, which is the model the executor is. *)
 ASSUME IsFiniteSet(Origin)
@@ -98,7 +98,7 @@ SetToSeq(S) ==
         f[Cardinality(S)]
 
 (* AN INSTANT. Not bounded: a deadline is allowed to point past the horizon --
-   that is what "scheduled for later" means -- and `retryTimeoutAt = now + RetryTimeout`
+   that is what "scheduled for later" means -- and `retryTimeoutAt = now + RetryDelay`
    does exactly that. Only membership is ever tested, never enumerated. *)
 Time ==
     Nat

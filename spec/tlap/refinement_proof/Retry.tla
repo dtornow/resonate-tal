@@ -4,7 +4,7 @@
 EXTENDS Proj
 
 RetryBody(obj, t) ==
-    [obj EXCEPT !.task.retryTimeoutAt = t + RetryTimeout]
+    [obj EXCEPT !.task.retryTimeoutAt = t + RetryDelay]
 
 RetryMsg(o, i) ==
     [ address |-> o[i].promise.tags.target,
@@ -51,7 +51,7 @@ PROOF
         BY DEF NoTime, P!NoTime
     <1>2. i \in { j \in DOMAIN o : guard(j) }
         BY <1>1, Zenon DEF DueR, guard
-    <1>3. RetryBody(o[i], t) = [old EXCEPT !.task.retryTimeoutAt = t + RetryTimeout]
+    <1>3. RetryBody(o[i], t) = [old EXCEPT !.task.retryTimeoutAt = t + RetryDelay]
         BY DEF RetryBody, old
     <1>4. RetryMsg(o, i) = msg
         BY DEF RetryMsg, msg, old
@@ -63,7 +63,7 @@ PROOF
             BY <1>5, Zenon DEF Post
         <2>2. QED
             BY <2>1, SetExtensionality
-    <1>7. Store(P!Write(o, i, [old EXCEPT !.task.retryTimeoutAt = t + RetryTimeout]),
+    <1>7. Store(P!Write(o, i, [old EXCEPT !.task.retryTimeoutAt = t + RetryDelay]),
                 { x \in b : P!MsgKey(x) /= P!MsgKey(msg) } \cup {msg})
             \in P!DueRetry(o, b, t)
         BY <1>2, Zenon DEF Store, P!DueRetry, old, msg, guard
