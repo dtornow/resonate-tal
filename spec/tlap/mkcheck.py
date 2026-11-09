@@ -8,7 +8,7 @@ names = [(m.group(1), src.index(m.group(0)) > trans_at)
          for m in re.finditer(r'^([a-z][A-Za-z0-9_]*) ==$', src, re.M)]
 
 for mod, base, cfgbase, inst in [
-    ('AbstractCheck', 'Abstract', 'Abstract', 'I == INSTANCE Invariants'),
+    ('AbstractCheck', 'Abstract', 'Abstract', 'I == INSTANCE Invariants WITH outbox <- network'),
     ('ConcreteCheck', 'ConcreteView', 'Concrete', 'I == INSTANCE Invariants WITH objects <- Objects'),
 ]:
     with open(mod + '.tla', 'w') as f:

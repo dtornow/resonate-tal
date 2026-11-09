@@ -19,7 +19,7 @@ vars ==
 (* Reuse the already checked protocol functions, but interpret its outbox as
    a set of messages offered to the network. It is not the network itself. *)
 A ==
-    INSTANCE Abstract WITH outbox <- offers
+    INSTANCE SweptAbstract WITH outbox <- offers
 
 DocState(os, pending) ==
     [objects |-> os, offers |-> pending]

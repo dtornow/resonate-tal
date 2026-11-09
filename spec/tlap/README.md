@@ -36,8 +36,8 @@ sufficient. Left out, it has to say what goes wrong without one.
 
 | | |
 |---|---|
-| `Abstract.tla` | the machine: no fence, effects applied one at a time |
-| `DirectAbstract.tla` | prototype with one direct internal or request action per transition and a lossy `network` |
+| `Abstract.tla` | direct protocol actions with best-effort `network` writes |
+| `SweptAbstract.tla` | legacy batched adapter for the established refinement proof |
 | `Concrete.tla` | the same protocol under one-document-per-origin and a CAS |
 | `refinement_claim/Refinement.tla` | the concrete-to-abstract refinement claim |
 | `refinement_proof/` | the TLAPS refinement argument and supporting lemmas |
@@ -67,7 +67,7 @@ not.
 
 ```
 ./check.sh                  # every invariant expected to hold
-./check.sh DirectAbstract   # standalone direct-action prototype
+./check.sh Abstract         # direct-action protocol
 ./check.sh WheelComplete    # one name, to watch it fail
 ```
 

@@ -8,7 +8,7 @@ Objects ==
       |-> docs[i.origin][i] ]
 
 A ==
-    INSTANCE Abstract WITH objects <- Objects
+    INSTANCE SweptAbstract WITH objects <- Objects
 
 C_UnitCoherent ==
     A!UnitCoherent

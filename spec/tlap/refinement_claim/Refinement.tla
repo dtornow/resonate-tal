@@ -7,7 +7,9 @@
    and the outbox are the protocol's own. *)
 EXTENDS ConcreteView
 
-P == INSTANCE Abstract WITH objects <- Objects
+(* Temporary target for the established one-step proof. The replacement
+   claim targets direct Abstract through the trace-expansion adapter. *)
+P == INSTANCE SweptAbstract WITH objects <- Objects
 
 (* Named entry points for TLC; the TLAPS theorem states the implication
    directly instead of hiding either side behind these names. *)
