@@ -623,11 +623,11 @@ SweepRetryAt(doc, t) ==
     ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
                     IF i \in S THEN
-                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                     ELSE
                         doc[i] ],
       puts  |-> [ n \in 1 .. Len(q) |->
-                    [at |-> t + RetryTimeout, id |-> q[n], kind |-> "retry"] ],
+                    [at |-> t + RetryDelay, id |-> q[n], kind |-> "retry"] ],
       dels  |-> [ n \in 1 .. Len(q) |->
                     [at |-> doc[q[n]].task.retryTimeoutAt, id |-> q[n], kind |-> "retry"] ],
       sends |-> [ n \in 1 .. Len(q) |->

@@ -9,7 +9,7 @@
 EXTENDS ConcreteView, SequenceTheorems, TLAPS
 
 ASSUME TtlNat == Ttl \subseteq Nat
-ASSUME RetryNat == RetryTimeout \in Nat
+ASSUME RetryNat == RetryDelay \in Nat
 ASSUME Origin /= {}
 
 Guard(obj) ==
@@ -64,7 +64,7 @@ PROOF
 
 LEMMA RetryTime ==
     ASSUME NEW t \in Nat
-    PROVE  t + RetryTimeout /= NoTime
+    PROVE  t + RetryDelay /= NoTime
 PROOF
     BY RetryNat, Z3 DEF NoTime
 
@@ -2691,15 +2691,15 @@ PROOF
 LEMMA RetryBits ==
     ASSUME NEW obj, NEW t \in Nat,
            Guard(obj), obj.task.state = "pending"
-    PROVE  LET nw == [ obj EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+    PROVE  LET nw == [ obj EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
             IN  Guard(nw) /\ nw.promise.callbacks = obj.promise.callbacks
 PROOF
-    <1> DEFINE t1 == [obj.task EXCEPT !.retryTimeoutAt = t + RetryTimeout]
+    <1> DEFINE t1 == [obj.task EXCEPT !.retryTimeoutAt = t + RetryDelay]
     <1> DEFINE raw == [obj EXCEPT !.task = t1]
     <1>1. t1.state = obj.task.state
           /\ t1.ttl = obj.task.ttl
           /\ t1.leaseTimeoutAt = obj.task.leaseTimeoutAt
-          /\ t1.retryTimeoutAt = t + RetryTimeout
+          /\ t1.retryTimeoutAt = t + RetryDelay
         BY ONLY Z3 DEF t1
     <1>2. raw.promise = obj.promise /\ raw.task = t1
         BY ONLY Z3 DEF raw
@@ -2718,11 +2718,11 @@ PROOF
         BY Z3 DEF Guard
     <1>6. raw.task.state = "pending"
         BY ONLY <1>1, <1>4, <1>5, Z3
-    <1>7. t + RetryTimeout /= NoTime
+    <1>7. t + RetryDelay /= NoTime
         BY RetryTime, RetryNat, Z3
     <1>8. Guard(raw)
         BY ONLY <1>1, <1>3, <1>4, <1>5, <1>6, <1>7, Z3 DEF Guard
-    <1>9. raw = [ obj EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+    <1>9. raw = [ obj EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
         BY Zenon DEF raw, t1
     <1>10. QED
         BY ONLY <1>3, <1>8, <1>9, Isa
@@ -2750,11 +2750,11 @@ PROOF
                 ELSE
                 [ doc   |-> [ i \in DOMAIN doc |->
                                 IF i \in S THEN
-                                    [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                                    [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                                 ELSE
                                     doc[i] ],
                   puts  |-> [ n \in 1 .. Len(q) |->
-                                [at |-> t + RetryTimeout, id |-> q[n], kind |-> "retry"] ],
+                                [at |-> t + RetryDelay, id |-> q[n], kind |-> "retry"] ],
                   dels  |-> [ n \in 1 .. Len(q) |->
                                 [at |-> doc[q[n]].task.retryTimeoutAt, id |-> q[n], kind |-> "retry"] ],
                   sends |-> [ n \in 1 .. Len(q) |->
@@ -2771,7 +2771,7 @@ PROOF
         <2> DEFINE img ==
                 [ i \in DOMAIN doc |->
                     IF i \in S THEN
-                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                     ELSE
                         doc[i] ]
         <2>1. SweepRetryAt(doc, t).doc = img
@@ -2783,13 +2783,13 @@ PROOF
                      /\ Guard(img[i])
             <3>1. img[i] =
                     IF i \in S THEN
-                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                     ELSE
                         doc[i]
                 BY AppCtor, Isa DEF img
             <3>2. CASE i \in S
                 <4> DEFINE nw ==
-                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                 <4>1. img[i] = nw
                     BY ONLY <3>1, <3>2, Z3 DEF nw
                 <4>2. DocOk(doc) /\ i \in DOMAIN doc
