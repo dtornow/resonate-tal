@@ -6,7 +6,7 @@
    task is still a pending promise. A ttl is a duration, so arming a lease
    at a natural time cannot land on NoTime. The two search tags have no
    handler, and the executor names at least one origin. *)
-EXTENDS Concrete, SequenceTheorems, TLAPS
+EXTENDS ConcreteView, SequenceTheorems, TLAPS
 
 ASSUME TtlNat == Ttl \subseteq Nat
 ASSUME RetryNat == RetryTimeout \in Nat

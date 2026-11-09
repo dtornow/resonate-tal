@@ -32,9 +32,10 @@ fi
 
 SPEC=${1:-Abstract}
 TLA=$SPEC.tla
-if [ "$SPEC" = "Refinement" ]; then
-    TLA=refinement_claim/Refinement.tla
-fi
+case "$SPEC" in
+    Concrete)   TLA=ConcreteView.tla ;;
+    Refinement) TLA=refinement_claim/Refinement.tla ;;
+esac
 echo "== $SPEC =="
 if [ $# -le 1 ]; then
     CFG=$SPEC.cfg

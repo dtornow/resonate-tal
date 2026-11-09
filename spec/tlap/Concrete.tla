@@ -14,14 +14,6 @@ vars ==
 
 -----------------------------------------------------------------------------
 
-Objects ==
-    [ i \in UNION { DOMAIN docs[o] : o \in Origin } |-> docs[i.origin][i] ]
-
-A ==
-    INSTANCE Abstract WITH objects <- Objects
-
------------------------------------------------------------------------------
-
 New(req, t) ==
     IF req.timeoutAt > t THEN
         [ promise |-> [ state |-> "pending", param |-> req.param, value |-> NoValue,
@@ -867,11 +859,10 @@ StorageTypeOK ==
     /\ TimerStorageTypeOK
 
 C_TypeOK ==
-    /\ A!TypeOK
+    /\ now \in Time
     /\ StorageTypeOK
-
-C_UnitCoherent ==
-    A!UnitCoherent
+    /\ outbox \subseteq OutEntry
+    /\ \A a, b \in outbox : MsgKey(a) = MsgKey(b) => a = b
 
 ArmedTimers ==
     UNION { TimerNames(docs[o], o) : o \in Origin }
@@ -891,11 +882,5 @@ SplitWrite ==
 
 NoSplitWrite ==
     ~SplitWrite
-
-CT_preserved_settled_promise_record ==
-    [][A!preserved_settled_promise_record]_vars
-
-CT_consistent_promise_settlement_stamp ==
-    [][A!consistent_promise_settlement_stamp]_vars
 
 =============================================================================

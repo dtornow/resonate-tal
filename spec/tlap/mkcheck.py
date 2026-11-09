@@ -7,9 +7,9 @@ trans_at = src.index('Stage 3 -- transition')
 names = [(m.group(1), src.index(m.group(0)) > trans_at)
          for m in re.finditer(r'^([a-z][A-Za-z0-9_]*) ==$', src, re.M)]
 
-for mod, base, inst in [
-    ('AbstractCheck', 'Abstract', 'I == INSTANCE Invariants'),
-    ('ConcreteCheck', 'Concrete', 'I == INSTANCE Invariants WITH objects <- Objects'),
+for mod, base, cfgbase, inst in [
+    ('AbstractCheck', 'Abstract', 'Abstract', 'I == INSTANCE Invariants'),
+    ('ConcreteCheck', 'ConcreteView', 'Concrete', 'I == INSTANCE Invariants WITH objects <- Objects'),
 ]:
     with open(mod + '.tla', 'w') as f:
         pad = '-' * 20
@@ -23,7 +23,7 @@ for mod, base, inst in [
                 f.write(f"inv_{n} ==\n    I!{n}\n\n")
         f.write("=" * 79 + "\n")
 
-    basecfg = open(base + '.cfg').read()
+    basecfg = open(cfgbase + '.cfg').read()
     # keep everything up to the first INVARIANT/PROPERTY block
     kept = re.split(r'^(?:INVARIANT|PROPERTY)\b', basecfg, flags=re.M)[0]
     with open(mod + '.cfg', 'w') as f:

@@ -5,7 +5,7 @@
    alone. The write stores the time the decision was made, which is at most
    that clock. The compare-and-swap is the only coordination. The document
    and the outbox are the protocol's own. *)
-EXTENDS Concrete
+EXTENDS ConcreteView
 
 P == INSTANCE Abstract WITH objects <- Objects
 
