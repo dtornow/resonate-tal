@@ -37,11 +37,10 @@ sufficient. Left out, it has to say what goes wrong without one.
 | | |
 |---|---|
 | `Abstract.tla` | direct protocol actions with best-effort `network` writes |
-| `SweptAbstract.tla` | legacy batched adapter for the established refinement proof |
 | `Concrete.tla` | the same protocol under one-document-per-origin and a CAS |
-| `refinement_claim/Refinement.tla` | the concrete-to-abstract refinement claim |
-| `refinement_proof/` | the TLAPS refinement argument and supporting lemmas |
-| `*.cfg` | models small enough to check and large enough to interleave |
+| `Requests.tla` | shared protocol vocabulary |
+| `legacy/` | swept adapter, proof modules, generated checks, and experiments |
+| `Abstract.cfg`, `ConcreteStorage.cfg` | active executable models |
 
 `Implemented` is the knob that keeps them comparable: a CONSTANT naming which
 event constructors the alphabet offers, read by both, so the two machines
@@ -68,7 +67,7 @@ not.
 ```
 ./check.sh                  # every invariant expected to hold
 ./check.sh Abstract         # direct-action protocol
-./check.sh WheelComplete    # one name, to watch it fail
+./check.sh Concrete         # concrete storage schema
 ```
 
 TLC is the checker; `check.sh` runs Apalache first on types only if it is on

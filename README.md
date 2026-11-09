@@ -5,13 +5,8 @@ TLA+ models copied from [resonatehq/resonate](https://github.com/resonatehq/reso
 | | |
 |---|---|
 | `spec/tlap/Abstract.tla` | the protocol: one direct timeout, callback, listener, request, or clock action per step |
-| `spec/tlap/SweptAbstract.tla` | legacy batched adapter retained for the established one-step proof |
 | `spec/tlap/Concrete.tla` | the same protocol as one document per origin, with a CAS and a timeout wheel |
-| `spec/tlap/refinement_claim/Refinement.tla` | the claim that a concrete behavior is a protocol behavior: same clock, same outbox, objects read off the documents |
+| `spec/tlap/Requests.tla` | shared protocol vocabulary |
+| `spec/tlap/legacy/` | swept adapter, refinement proofs, checkers, and experiments |
 
-`Requests.tla` is the shared vocabulary. `AbstractHandlers.tla` contains the
-pure request handlers shared by the direct protocol and batched adapter. `Invariants.tla` is
-the catalogue, instantiated by the verified machines. Configs, `check.sh`,
-and the checker generators sit beside the modules. See `spec/tlap/README.md`.
-
-`spec/tlap/refinement_proof/Proof.tla` is the final TLAPS argument; its supporting proof modules live beside it.
+See `spec/tlap/README.md` for active model checks and the legacy proof archive.

@@ -19,9 +19,9 @@ APALACHE=${APALACHE:-apalache-mc}
 
 SPEC=${1:-Abstract}
 TLA=$SPEC.tla
+DEFAULT_CFG=$SPEC.cfg
 case "$SPEC" in
-    Concrete)   TLA=ConcreteView.tla ;;
-    Refinement) TLA=refinement_claim/Refinement.tla ;;
+    Concrete) DEFAULT_CFG=ConcreteStorage.cfg ;;
 esac
 
 if command -v "$APALACHE" >/dev/null 2>&1; then
@@ -39,10 +39,10 @@ fi
 
 echo "== $SPEC =="
 if [ $# -le 1 ]; then
-    CFG=$SPEC.cfg
+    CFG=$DEFAULT_CFG
 else
     CFG=$(mktemp /tmp/one-XXXX.cfg)
-    sed -n "1,/MaxVersion/p" "$SPEC.cfg" > "$CFG"
+    sed -n "1,/MaxVersion/p" "$DEFAULT_CFG" > "$CFG"
     # a T_ or CT_ prefix marks a wrapped .trans entry, which TLC reads as a
     # temporal property. Everything else is a state invariant.
     case "$2" in
