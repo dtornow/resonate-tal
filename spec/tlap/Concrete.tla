@@ -464,11 +464,22 @@ Merge(a, b) ==
       dels  |-> a.dels  \o b.dels,
       sends |-> a.sends \o b.sends ]
 
-TimerNames(doc, origin) ==
+(* One empty physical timer document wakes an origin at its nearest active
+   deadline. The wake performs a full document sweep and schedules the next. *)
+ActiveDeadlines(doc) ==
     LET armed ==
             { x \in [id : DOMAIN doc, kind : DeadlineKind] :
                 Deadline(doc[x.id], x.kind) /= NoTime }
-    IN  { <<Deadline(doc[x.id], x.kind), origin>> : x \in armed }
+    IN  { Deadline(doc[x.id], x.kind) : x \in armed }
+
+NextDeadline(doc) ==
+    CHOOSE t \in ActiveDeadlines(doc) :
+        \A u \in ActiveDeadlines(doc) : t <= u
+
+TimerNames(doc, origin) ==
+    IF ActiveDeadlines(doc) = {}
+    THEN {}
+    ELSE { <<NextDeadline(doc), origin>> }
 
 SweepTimeoutAt(doc, t) ==
     LET S  == { i \in DOMAIN doc :
@@ -862,17 +873,14 @@ C_TypeOK ==
 C_UnitCoherent ==
     A!UnitCoherent
 
-Armed(doc) ==
-    LET armed ==
-            { x \in [id : DOMAIN doc, kind : DeadlineKind] :
-                Deadline(doc[x.id], x.kind) /= NoTime }
-    IN  { <<Deadline(doc[x.id], x.kind), x.id.origin>> : x \in armed }
+ArmedTimers ==
+    UNION { TimerNames(docs[o], o) : o \in Origin }
 
 C_WheelSound ==
-    DOMAIN timeouts \subseteq Armed(Objects)
+    DOMAIN timeouts \subseteq ArmedTimers
 
 C_WheelComplete ==
-    Armed(Objects) \subseteq DOMAIN timeouts
+    ArmedTimers \subseteq DOMAIN timeouts
 
 SplitWrite ==
     \E r \in DOMAIN steps :
