@@ -350,6 +350,222 @@ CallbackObjects(o, awaitedId, awaiterId) ==
 NetworkWrite(n, msg) ==
     { kept \in n : MsgKey(kept) /= MsgKey(msg) } \cup {msg}
 
+NetworkWrites(n, messages) ==
+    { kept \in n :
+        \A msg \in messages : MsgKey(kept) /= MsgKey(msg) } \cup messages
+
+BatchState(o, n) ==
+    [objects |-> o, network |-> n]
+
+(* Each batch stage is a pure transformer over an explicit store/network
+   record. Eligibility is recomputed between categories, at the current
+   protocol time. A category may contribute nothing, but a Batch as a whole
+   must select at least one internal item. *)
+
+PromiseTimeoutItems(o, t) ==
+    { id \in DOMAIN o :
+        /\ o[id].promise.state = "pending"
+        /\ o[id].promise.timeoutAt <= t }
+
+ApplyPromiseTimeouts(stage, chosen, t) ==
+    BatchState(
+        [ id \in DOMAIN stage.objects |->
+            IF id \in chosen
+            THEN Project(stage.objects[id], t)
+            ELSE stage.objects[id] ],
+        stage.network)
+
+ListenerItems(o) ==
+    { item \in [id : DOMAIN o, address : Address] :
+        /\ item.address \in o[item.id].promise.listeners
+        /\ o[item.id].promise.state /= "pending" }
+
+ListenerMessage(o, item) ==
+    [ address |-> item.address,
+      message |-> [ tag   |-> "Unblock",
+                    id    |-> item.id,
+                    state |-> o[item.id].promise.state ] ]
+
+ApplyListeners(stage, chosen, emitted) ==
+    LET messages == { ListenerMessage(stage.objects, item) :
+                        item \in emitted }
+    IN
+        BatchState(
+            [ id \in DOMAIN stage.objects |->
+                LET addresses ==
+                        { item.address :
+                            item \in { x \in chosen : x.id = id } }
+                IN  IF addresses = {}
+                    THEN stage.objects[id]
+                    ELSE WithoutListeners(stage.objects[id], addresses) ],
+            NetworkWrites(stage.network, messages))
+
+CallbackItems(o, t) ==
+    { item \in [awaited : DOMAIN o, awaiter : Id] :
+        /\ item.awaiter \in o[item.awaited].promise.callbacks
+        /\ Project(o[item.awaited], t).promise.state /= "pending" }
+
+ApplyCallbacks(stage, chosen, t) ==
+    LET struck ==
+            [ id \in DOMAIN stage.objects |->
+                LET awaiters ==
+                        { item.awaiter :
+                            item \in { x \in chosen : x.awaited = id } }
+                IN  IF awaiters = {}
+                    THEN stage.objects[id]
+                    ELSE WithoutCallbacks(
+                            Project(stage.objects[id], t), awaiters) ]
+        final ==
+            [ id \in DOMAIN struck |->
+                LET resumes ==
+                        { item.awaited :
+                            item \in { x \in chosen : x.awaiter = id } }
+                IN  IF resumes = {} THEN
+                        struck[id]
+                    ELSE
+                        LET awaiter == Project(struck[id], t)
+                        IN  IF awaiter.task.state \in {"none", "fulfilled"} THEN
+                                awaiter
+                            ELSE IF awaiter.task.state = "suspended" THEN
+                                WakeSuspended(awaiter, resumes, t)
+                            ELSE
+                                UnionResumes(awaiter, resumes) ]
+    IN
+        BatchState(final, stage.network)
+
+LeaseTimeoutItems(o, t) ==
+    { id \in DOMAIN o :
+        LET old == o[id]
+        IN  /\ old.task.state = "acquired"
+            /\ old.task.leaseTimeoutAt /= NoTime
+            /\ old.task.leaseTimeoutAt <= t
+            /\ Project(old, t).promise.state = "pending" }
+
+ApplyLeaseTimeouts(stage, chosen, t) ==
+    BatchState(
+        [ id \in DOMAIN stage.objects |->
+            IF id \notin chosen THEN
+                stage.objects[id]
+            ELSE
+                [stage.objects[id] EXCEPT
+                    !.task.state          = "pending",
+                    !.task.pid            = NoPid,
+                    !.task.ttl            = NoTime,
+                    !.task.leaseTimeoutAt = NoTime,
+                    !.task.retryTimeoutAt = t] ],
+        stage.network)
+
+RetryTimeoutItems(o, t) ==
+    { id \in DOMAIN o :
+        LET old == o[id]
+        IN  /\ old.task.state = "pending"
+            /\ old.task.retryTimeoutAt /= NoTime
+            /\ old.task.retryTimeoutAt <= t
+            /\ Project(old, t).promise.state = "pending" }
+
+RetryMessage(o, id) ==
+    [ address |-> o[id].promise.tags.target,
+      message |-> [ tag     |-> "Execute",
+                    id      |-> id,
+                    version |-> o[id].task.version ] ]
+
+ApplyRetryTimeouts(stage, chosen, emitted, t) ==
+    LET messages == { RetryMessage(stage.objects, id) : id \in emitted }
+    IN
+        BatchState(
+            [ id \in DOMAIN stage.objects |->
+                IF id \in chosen
+                THEN [stage.objects[id] EXCEPT
+                          !.task.retryTimeoutAt = t + RetryDelay]
+                ELSE stage.objects[id] ],
+            NetworkWrites(stage.network, messages))
+
+(* The event wrapper is removed only where the shared alphabet wraps a
+   request in `.req`. In particular TaskFence receives the complete event,
+   including its fencing id, version, and nested action. *)
+HandleRequest(o, req, t) ==
+    CASE req.tag = "PromiseCreate" ->
+             HandlePromiseCreate(o, req.req, t)
+      [] req.tag = "PromiseSettle" ->
+             HandlePromiseSettle(o, req.req, t)
+      [] req.tag = "PromiseRegisterCallback" ->
+             HandlePromiseRegisterCallback(o, req.req, t)
+      [] req.tag = "PromiseRegisterListener" ->
+             HandlePromiseRegisterListener(o, req, t)
+      [] req.tag = "TaskCreate" ->
+             HandleTaskCreate(o, req, t)
+      [] req.tag = "TaskAcquire" ->
+             HandleTaskAcquire(o, req, t)
+      [] req.tag = "TaskFence" ->
+             HandleTaskFence(o, req, t)
+      [] req.tag = "TaskHeartbeat" ->
+             HandleTaskHeartbeat(o, req, t)
+      [] req.tag = "TaskSuspend" ->
+             HandleTaskSuspend(o, req, t)
+      [] req.tag = "TaskFulfill" ->
+             HandleTaskFulfill(o, req, t)
+      [] req.tag = "TaskRelease" ->
+             HandleTaskRelease(o, req, t)
+      [] req.tag = "TaskHalt" ->
+             HandleTaskHalt(o, req, t)
+      [] OTHER ->
+             HandleTaskContinue(o, req, t)
+
+OptionalRequest ==
+    {{}} \cup { {req} : req \in ExternalEvent }
+
+ApplyRequest(o, chosen, t) ==
+    IF chosen = {}
+    THEN {o}
+    ELSE UNION { HandleRequest(o, req, t) : req \in chosen }
+
+(* A declarative, bounded-by-the-state batch: choose any nonempty collection
+   of currently eligible internal items, apply the five categories in the
+   executor's order, and then apply zero or one enabled request. Listener and
+   retry sends remain best effort. Request-only transitions remain the direct
+   actions below. *)
+Batch ==
+    LET initial == BatchState(objects, network)
+    IN  \E promiseItems \in SUBSET PromiseTimeoutItems(initial.objects, now) :
+        LET afterPromises ==
+                ApplyPromiseTimeouts(initial, promiseItems, now)
+        IN  \E listenerItems \in SUBSET ListenerItems(afterPromises.objects) :
+            \E emittedListeners \in SUBSET listenerItems :
+            LET afterListeners ==
+                    ApplyListeners(
+                        afterPromises, listenerItems, emittedListeners)
+            IN  \E callbackItems \in
+                        SUBSET CallbackItems(afterListeners.objects, now) :
+                LET afterCallbacks ==
+                        ApplyCallbacks(afterListeners, callbackItems, now)
+                IN  \E leaseItems \in
+                            SUBSET LeaseTimeoutItems(
+                                afterCallbacks.objects, now) :
+                    LET afterLeases ==
+                            ApplyLeaseTimeouts(
+                                afterCallbacks, leaseItems, now)
+                    IN  \E retryItems \in
+                                SUBSET RetryTimeoutItems(
+                                    afterLeases.objects, now) :
+                        \E emittedRetries \in SUBSET retryItems :
+                        LET afterRetries ==
+                                ApplyRetryTimeouts(
+                                    afterLeases, retryItems,
+                                    emittedRetries, now)
+                        IN  /\ \/ promiseItems /= {}
+                                  \/ listenerItems /= {}
+                                  \/ callbackItems /= {}
+                                  \/ leaseItems /= {}
+                                  \/ retryItems /= {}
+                            /\ \E request \in OptionalRequest :
+                                \E finalObjects \in
+                                        ApplyRequest(
+                                            afterRetries.objects,
+                                            request, now) :
+                                    /\ objects' = finalObjects
+                                    /\ network' = afterRetries.network
+                                    /\ UNCHANGED now
+
 Store(os) ==
     /\ objects' = os
     /\ UNCHANGED <<network, now>>
@@ -495,6 +711,7 @@ AnyListener ==
     \E id \in Id, address \in Address : ProcessListener(id, address)
 
 Next ==
+    \/ Batch
     \/ AnyPromiseTimeout
     \/ AnyLeaseTimeout
     \/ AnyRetryTimeout
