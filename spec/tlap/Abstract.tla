@@ -48,11 +48,6 @@ Project(obj, t) ==
     ELSE
         obj
 
-(* TLC rejects `UNION` of the empty set. A fence on the only id has no other
-   request to nest, and a disabled handler contributes nothing. *)
-Flat(S) ==
-    IF S = {} THEN {} ELSE UNION S
-
 -----------------------------------------------------------------------------
 
 HandlePromiseCreate(o, req, t) ==
@@ -148,17 +143,20 @@ HandleTaskAcquire(o, req, t) ==
             ELSE {}
 
 (* The nested create or settle sees this store. It is not projected again. *)
-HandleTaskFence(o, i, v, t) ==
-    IF i \notin DOMAIN o THEN
+HandleTaskFence(o, req, t) ==
+    IF req.id \notin DOMAIN o THEN
         {}
     ELSE
-        LET old == Project(o[i], t)
-        IN  IF /\ old.task.state = "acquired"
+        LET old == Project(o[req.id], t)
+        IN  IF /\ req.action.req.id /= req.id
+               /\ req.action.req.id.origin = req.id.origin
+               /\ old.task.state = "acquired"
                /\ old.promise.state = "pending"
-               /\ old.task.version = v
+               /\ old.task.version = req.version
             THEN
-                Flat({HandlePromiseCreate(o, req, t) : req \in {r \in CreateReq : r.id /= i}})
-                \cup Flat({HandlePromiseSettle(o, req, t) : req \in {r \in SettleReq : r.id /= i}})
+                IF req.action.tag = "Create"
+                THEN HandlePromiseCreate(o, req.action.req, t)
+                ELSE HandlePromiseSettle(o, req.action.req, t)
             ELSE
                 {}
 
@@ -448,8 +446,8 @@ TaskCreate(req) ==
 TaskAcquire(req) ==
     \E os \in HandleTaskAcquire(objects, req, now) : Store(os)
 
-TaskFence(id, version) ==
-    \E os \in HandleTaskFence(objects, id, version, now) : Store(os)
+TaskFence(req) ==
+    \E os \in HandleTaskFence(objects, req, now) : Store(os)
 
 TaskHeartbeat(req) ==
     \E os \in HandleTaskHeartbeat(objects, req, now) : Store(os)
@@ -511,7 +509,8 @@ Next ==
           TaskCreate(req)
     \/ \E req \in [id : Id, version : Version, pid : Pid, ttl : Ttl] :
           TaskAcquire(req)
-    \/ \E id \in Id, version \in Version : TaskFence(id, version)
+    \/ \E req \in [id : Id, version : Version, action : FenceAction] :
+          TaskFence(req)
     \/ \E req \in [pid : Pid, tasks : SUBSET TaskRefT] :
           TaskHeartbeat(req)
     \/ \E req \in [id : Id, version : Version,
