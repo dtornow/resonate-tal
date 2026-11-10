@@ -397,11 +397,11 @@ PROOF
     <1>9. QED
         BY <1>8 DEF u, src, w
 
-Fresh(S, pre) ==
+PickFresh(S, pre) ==
     CHOOSE y \in S : \A i \in 1 .. Len(pre) : pre[i] /= y
 
 Step(S, pre) ==
-    pre \o << Fresh(S, pre) >>
+    pre \o << PickFresh(S, pre) >>
 
 EnumFn(S) ==
     LET f[k \in 0 .. Cardinality(S)] ==
@@ -511,7 +511,7 @@ PROOF
                  IF n = 0 THEN << >>
                  ELSE u[n - 1] \o << CHOOSE y \in S :
                         \A i \in 1 .. Len(u[n - 1]) : u[n - 1][i] /= y >>]
-        BY <1>2 DEF Up, Step, Fresh
+        BY <1>2 DEF Up, Step, PickFresh
     <1>4. u = [k \in 0 .. len |->
                  IF k = 0 THEN << >>
                  ELSE u[k - 1] \o << CHOOSE y \in S :
@@ -523,7 +523,7 @@ PROOF
           /\ Range(u[len]) = S
         BY <1>4, EnumAt
     <1>6. EnumFn(S) = u
-        BY <1>1 DEF EnumFn, Up, Step, Fresh, ms
+        BY <1>1 DEF EnumFn, Up, Step, PickFresh, ms
     <1>7. QED
         BY <1>5, <1>6
 
@@ -541,7 +541,7 @@ LEMMA SeqOfFn ==
     ASSUME NEW S, NEW len, len = Cardinality(S)
     PROVE  SeqOf(S) = EnumFn(S)[len]
 PROOF
-    BY DEF SeqOf, EnumFn, Step, Fresh
+    BY DEF SeqOf, EnumFn, Step, PickFresh
 
 LEMMA SeqOfEnum ==
     ASSUME NEW S, IsFiniteSet(S),

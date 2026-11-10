@@ -17,9 +17,16 @@ cd "$(dirname "$0")"
 TLA_TOOLS=${TLA_TOOLS:-tla2tools.jar}
 APALACHE=${APALACHE:-apalache-mc}
 
+SPEC=${1:-Abstract}
+TLA=$SPEC.tla
+DEFAULT_CFG=$SPEC.cfg
+case "$SPEC" in
+    Concrete) DEFAULT_CFG=ConcreteStorage.cfg ;;
+esac
+
 if command -v "$APALACHE" >/dev/null 2>&1; then
     echo "== types =="
-    "$APALACHE" typecheck Abstract.tla 2>&1 | grep -E "purrfect|error|\[FAILED\]" || true
+    "$APALACHE" typecheck "$TLA" 2>&1 | grep -E "purrfect|error|\[FAILED\]" || true
 else
     echo "== types == (skipped: $APALACHE not on PATH)"
 fi
@@ -30,13 +37,12 @@ if [ ! -f "$TLA_TOOLS" ]; then
     exit 1
 fi
 
-SPEC=${1:-Abstract}
 echo "== $SPEC =="
 if [ $# -le 1 ]; then
-    CFG=$SPEC.cfg
+    CFG=$DEFAULT_CFG
 else
     CFG=$(mktemp /tmp/one-XXXX.cfg)
-    sed -n "1,/MaxVersion/p" "$SPEC.cfg" > "$CFG"
+    sed -n "1,/MaxVersion/p" "$DEFAULT_CFG" > "$CFG"
     # a T_ or CT_ prefix marks a wrapped .trans entry, which TLC reads as a
     # temporal property. Everything else is a state invariant.
     case "$2" in
@@ -49,4 +55,4 @@ fi
 # tree will kill a running check by deleting the pool underneath it.
 java -Dtlc2.tool.impl.Tool.cdot=true -XX:+UseParallelGC -cp "$TLA_TOOLS" tlc2.TLC \
      -config "$CFG" -workers 4 -deadlock \
-     -metadir "${TLC_METADIR:-/tmp/tlc-$SPEC}" "$SPEC.tla"
+     -metadir "${TLC_METADIR:-/tmp/tlc-$SPEC}" "$TLA"

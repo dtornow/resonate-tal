@@ -4,10 +4,9 @@ TLA+ models copied from [resonatehq/resonate](https://github.com/resonatehq/reso
 
 | | |
 |---|---|
-| `spec/tlap/Abstract.tla` | the protocol: a step may sweep any number of due actions, then one request |
+| `spec/tlap/Abstract.tla` | the protocol: one direct timeout, callback, listener, request, or clock action per step |
 | `spec/tlap/Concrete.tla` | the same protocol as one document per origin, with a CAS and a timeout wheel |
-| `spec/tlap/Refinement.tla` | the claim that a concrete behavior is a protocol behavior: same clock, same outbox, objects read off the documents |
+| `spec/tlap/Requests.tla` | shared protocol vocabulary |
+| `spec/tlap/legacy/` | swept adapter, refinement proofs, checkers, and experiments |
 
-`Requests.tla` is the shared vocabulary. `Invariants.tla` is the catalogue, instantiated by both machines. Configs, `check.sh`, and the checker generators sit beside the modules. See `spec/tlap/README.md`.
-
-`Proof.tla` is the TLAPS argument. The initial states agree, and a step that does not land a document is a protocol step or invisible to the protocol. Timeouts, leases, retries, listeners, and callbacks are chains inside `Swept`. The document write is still open: it has to be shown from an invariant, at the recorded decision time.
+See `spec/tlap/README.md` for active model checks and the legacy proof archive.

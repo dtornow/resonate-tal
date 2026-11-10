@@ -375,4 +375,63 @@ PROOF
     <1>5. QED
         BY <1>3, <1>4
 
+(* The timeout pass projects every due promise, so projecting the result
+   again changes nothing. The listener pairs are then the abstract due set. *)
+LEMMA TimeoutFixed ==
+    ASSUME NEW doc, NEW t
+    PROVE  \A i \in DOMAIN SweepTimeoutAt(doc, t).doc :
+              P!Project(SweepTimeoutAt(doc, t).doc[i], t)
+                = SweepTimeoutAt(doc, t).doc[i]
+PROOF
+    <1> DEFINE S ==
+            { j \in DOMAIN doc :
+                doc[j].promise.state = "pending"
+                /\ doc[j].promise.timeoutAt <= t }
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1>1. S = DueP(doc, t)
+        BY DEF S, DueP
+    <1>2. tdoc = Image(doc, S, t)
+        BY TimeoutDoc DEF tdoc, S
+    <1>3. S \subseteq DOMAIN doc
+        BY DEF S
+    <1>4. DOMAIN Image(doc, S, t) = DOMAIN doc
+        <2>1. CASE S = {}
+            BY <2>1 DEF Image
+        <2>2. CASE S # {}
+            <3>1. Image(doc, S, t) = BulkP(doc, S, t)
+                BY <2>2 DEF Image
+            <3>2. DOMAIN BulkP(doc, S, t) = DOMAIN doc
+                BY DomCtor DEF BulkP
+            <3>3. QED
+                BY <3>1, <3>2
+        <2>3. QED
+            BY <2>1, <2>2
+    <1>5. ASSUME NEW i \in DOMAIN tdoc
+          PROVE  P!Project(tdoc[i], t) = tdoc[i]
+        <2>1. i \in DOMAIN doc
+            BY <1>2, <1>4, <1>5 DEF tdoc
+        <2>2. P!Project(Image(doc, DueP(doc, t), t)[i], t)
+                = Image(doc, DueP(doc, t), t)[i]
+            BY <2>1, ProjectFixed
+        <2>3. QED
+            BY <1>1, <1>2, <2>2 DEF tdoc
+    <1>6. QED
+        BY <1>5
+
+LEMMA TimeoutDueN ==
+    ASSUME NEW doc, NEW t
+    PROVE  DueN(SweepTimeoutAt(doc, t).doc, t)
+              = { x \in [id : { i \in DOMAIN SweepTimeoutAt(doc, t).doc :
+                                  SweepTimeoutAt(doc, t).doc[i].promise.state
+                                    /= "pending" },
+                         address : Address] :
+                    x.address
+                      \in SweepTimeoutAt(doc, t).doc[x.id].promise.listeners }
+PROOF
+    <1> DEFINE tdoc == SweepTimeoutAt(doc, t).doc
+    <1>1. \A i \in DOMAIN tdoc : P!Project(tdoc[i], t) = tdoc[i]
+        BY TimeoutFixed DEF tdoc
+    <1>2. QED
+        BY <1>1, SamePairs DEF tdoc
+
 =============================================================================== 

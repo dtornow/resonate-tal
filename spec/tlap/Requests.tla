@@ -21,7 +21,6 @@ EXTENDS Integers, Sequences, FiniteSets
   @typeAlias: outEntry = { address: ADDR, message: $message };
   @typeAlias: msgKey = { kind: Str, id: $id, address: ADDR };
   @typeAlias: createReq = { id: $id, timeoutAt: Int, param: VALUE, tags: $tags };
-  @typeAlias: getReq = { id: $id };
   @typeAlias: drainReq = { id: $id, awaiter: $id };
   @typeAlias: listenerDrainReq = { id: $id, address: ADDR };
   @typeAlias: listenerReq = { awaited: $id, address: ADDR };
@@ -59,7 +58,7 @@ CONSTANTS
     Implemented,
     NoPid,
     NoAddr,
-    RetryTimeout,
+    RetryDelay,
     MaxTime,
     MaxVersion
 
@@ -68,10 +67,10 @@ ASSUME NoAddr  \notin Address
 ASSUME NoValue \notin Value
 ASSUME MaxTime    >= 0
 ASSUME MaxVersion >= 0
-(* The sweep is a fixpoint. A retry timeout re-arms at now + RetryTimeout,
+(* The sweep is a fixpoint. A retry timeout re-arms at now + RetryDelay,
    which is only in the future -- and so retires its own trigger -- while
-   RetryTimeout is positive. *)
-ASSUME RetryTimeout > 0
+   RetryDelay is positive. *)
+ASSUME RetryDelay > 0
 (* A sweep counts due items. That count is a number only when the sets it
    ranges over are finite, which is the model the executor is. *)
 ASSUME IsFiniteSet(Origin)
@@ -99,7 +98,7 @@ SetToSeq(S) ==
         f[Cardinality(S)]
 
 (* AN INSTANT. Not bounded: a deadline is allowed to point past the horizon --
-   that is what "scheduled for later" means -- and `retryTimeoutAt = now + RetryTimeout`
+   that is what "scheduled for later" means -- and `retryTimeoutAt = now + RetryDelay`
    does exactly that. Only membership is ever tested, never enumerated. *)
 Time ==
     Nat
@@ -148,7 +147,7 @@ NoTask ==
 Promise ==
     [ state     : PromiseState,
       param     : Value,
-      value     : Value,
+      value     : Value \cup {NoValue},
       tags      : Tags,
       timeoutAt : Time,                  \* deadline -- armed as "promise"
       createdAt : Time,
@@ -158,7 +157,7 @@ Promise ==
 
 Task ==
     [ state     : TaskState,
-      version   : Version,               \* the fencing token
+      version   : Nat,                   \* stored fencing token; requests use bounded Version
       ttl       : Ttl \cup {NoTime},     \* the WORKER's number: lease asked for
       pid       : Pid \cup {NoPid},
       leaseTimeoutAt : Time \cup {NoTime},    \* deadline -- armed as "lease"
@@ -232,13 +231,10 @@ On(tag, S) ==
 
 ExternalEvent ==
        {}
-    \cup On("PromiseGet", { [tag |-> "PromiseGet", id |-> i] : i \in Id})
     \cup On("PromiseCreate", { [tag |-> "PromiseCreate", req |-> r] : r \in CreateReq})
     \cup On("PromiseSettle", { [tag |-> "PromiseSettle", req |-> r] : r \in SettleReq})
     \cup On("PromiseRegisterCallback", { [tag |-> "PromiseRegisterCallback", req |-> r] : r \in CallbackReq})
     \cup On("PromiseRegisterListener", { [tag |-> "PromiseRegisterListener", awaited |-> i, address |-> a] : i \in Id, a \in Address})
-    \cup On("PromiseSearch", { [tag |-> "PromiseSearch"]})
-    \cup On("TaskGet", { [tag |-> "TaskGet", id |-> i] : i \in Id})
     \cup On("TaskCreate", { [tag |-> "TaskCreate", pid |-> p, ttl |-> t, action |-> r] : p \in Pid, t \in Ttl, r \in CreateReq})
     \cup On("TaskAcquire", { [tag |-> "TaskAcquire", id |-> i, version |-> v, pid |-> p, ttl |-> t] : i \in Id, v \in Version, p \in Pid, t \in Ttl})
     \cup On("TaskFence", { [tag |-> "TaskFence", id |-> i, version |-> v, action |-> a] : i \in Id, v \in Version, a \in FenceAction})
@@ -248,12 +244,10 @@ ExternalEvent ==
     \cup On("TaskRelease", { [tag |-> "TaskRelease", id |-> i, version |-> v] : i \in Id, v \in Version})
     \cup On("TaskHalt", { [tag |-> "TaskHalt", id |-> i] : i \in Id})
     \cup On("TaskContinue", { [tag |-> "TaskContinue", id |-> i] : i \in Id})
-    \cup On("TaskSearch", { [tag |-> "TaskSearch"]})
 
 InternalEvent ==
        {}
-    \cup On("Timeout", { [tag |-> "Timeout", id |-> i, kind |-> k]
-                         : i \in Id, k \in DeadlineKind})
+    \cup On("Timeout", { [tag |-> "Timeout", origin |-> o] : o \in Origin })
 
 Event ==
     ExternalEvent \cup InternalEvent

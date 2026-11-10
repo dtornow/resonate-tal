@@ -14,14 +14,6 @@ vars ==
 
 -----------------------------------------------------------------------------
 
-Objects ==
-    [ i \in UNION { DOMAIN docs[o] : o \in Origin } |-> docs[i.origin][i] ]
-
-A ==
-    INSTANCE Abstract WITH objects <- Objects
-
------------------------------------------------------------------------------
-
 New(req, t) ==
     IF req.timeoutAt > t THEN
         [ promise |-> [ state |-> "pending", param |-> req.param, value |-> NoValue,
@@ -66,9 +58,6 @@ Skip(doc) ==
       puts  |-> << >>,
       dels  |-> << >>,
       sends |-> << >> ]
-
-HandlePromiseGet(req, doc, t) ==
-    Skip(doc)
 
 HandlePromiseCreate(req, doc, t) ==
     IF req.id \in DOMAIN doc THEN
@@ -151,9 +140,6 @@ HandlePromiseRegisterListener(req, doc, t) ==
                   puts  |-> << >>,
                   dels  |-> << >>,
                   sends |-> << >> ]
-
-HandleTaskGet(req, doc, t) ==
-    Skip(doc)
 
 HandleTaskCreate(req, doc, t) ==
     IF ~req.action.tags.targeted THEN
@@ -401,9 +387,7 @@ HandleTaskContinue(req, doc, t) ==
                   sends |-> << >> ]
 
 Handle(ev, doc, t) ==
-    CASE ev.tag = "PromiseGet" ->
-             HandlePromiseGet(ev, doc, t)
-      [] ev.tag = "PromiseCreate" ->
+    CASE ev.tag = "PromiseCreate" ->
              HandlePromiseCreate(ev.req, doc, t)
       [] ev.tag = "PromiseSettle" ->
              HandlePromiseSettle(ev.req, doc, t)
@@ -411,8 +395,6 @@ Handle(ev, doc, t) ==
              HandlePromiseRegisterCallback(ev.req, doc, t)
       [] ev.tag = "PromiseRegisterListener" ->
              HandlePromiseRegisterListener(ev, doc, t)
-      [] ev.tag = "TaskGet" ->
-             HandleTaskGet(ev, doc, t)
       [] ev.tag = "TaskCreate" ->
              HandleTaskCreate(ev, doc, t)
       [] ev.tag = "TaskAcquire" ->
@@ -437,9 +419,7 @@ Handle(ev, doc, t) ==
 -----------------------------------------------------------------------------
 
 OriginOf(ev) ==
-    CASE ev.tag = "PromiseGet" ->
-             ev.id.origin
-      [] ev.tag = "PromiseCreate" ->
+    CASE ev.tag = "PromiseCreate" ->
              ev.req.id.origin
       [] ev.tag = "PromiseSettle" ->
              ev.req.id.origin
@@ -447,8 +427,6 @@ OriginOf(ev) ==
              ev.req.awaited.origin
       [] ev.tag = "PromiseRegisterListener" ->
              ev.awaited.origin
-      [] ev.tag = "TaskGet" ->
-             ev.id.origin
       [] ev.tag = "TaskCreate" ->
              ev.action.id.origin
       [] ev.tag = "TaskAcquire" ->
@@ -468,7 +446,7 @@ OriginOf(ev) ==
       [] ev.tag = "TaskContinue" ->
              ev.id.origin
       [] ev.tag = "Timeout" ->
-             ev.id.origin
+             ev.origin
 
 -----------------------------------------------------------------------------
 
@@ -477,6 +455,23 @@ Merge(a, b) ==
       puts  |-> a.puts  \o b.puts,
       dels  |-> a.dels  \o b.dels,
       sends |-> a.sends \o b.sends ]
+
+(* One empty physical timer document wakes an origin at its nearest active
+   deadline. The wake performs a full document sweep and schedules the next. *)
+ActiveDeadlines(doc) ==
+    LET armed ==
+            { x \in [id : DOMAIN doc, kind : DeadlineKind] :
+                Deadline(doc[x.id], x.kind) /= NoTime }
+    IN  { Deadline(doc[x.id], x.kind) : x \in armed }
+
+NextDeadline(doc) ==
+    CHOOSE t \in ActiveDeadlines(doc) :
+        \A u \in ActiveDeadlines(doc) : t <= u
+
+TimerNames(doc, origin) ==
+    IF ActiveDeadlines(doc) = {}
+    THEN {}
+    ELSE { <<NextDeadline(doc), origin>> }
 
 SweepTimeoutAt(doc, t) ==
     LET S  == { i \in DOMAIN doc :
@@ -628,11 +623,11 @@ SweepRetryAt(doc, t) ==
     ELSE
     [ doc   |-> [ i \in DOMAIN doc |->
                     IF i \in S THEN
-                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryTimeout ]
+                        [ doc[i] EXCEPT !.task.retryTimeoutAt = t + RetryDelay ]
                     ELSE
                         doc[i] ],
       puts  |-> [ n \in 1 .. Len(q) |->
-                    [at |-> t + RetryTimeout, id |-> q[n], kind |-> "retry"] ],
+                    [at |-> t + RetryDelay, id |-> q[n], kind |-> "retry"] ],
       dels  |-> [ n \in 1 .. Len(q) |->
                     [at |-> doc[q[n]].task.retryTimeoutAt, id |-> q[n], kind |-> "retry"] ],
       sends |-> [ n \in 1 .. Len(q) |->
@@ -677,23 +672,27 @@ SubmitExternal(ev) ==
     /\ \E r \in Rid \ DOMAIN steps : steps' = Set(steps, r, Fresh(ev))
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
-SubmitInternal(e) ==
-    /\ e \in timeouts
-    /\ e.at <= now
+SubmitInternal(name) ==
+    /\ name \in DOMAIN timeouts
+    /\ name[1] <= now
     /\ \E r \in Rid \ DOMAIN steps :
            steps' = Set(steps, r,
-                        Fresh([tag |-> "Timeout", id |-> e.id, kind |-> e.kind]))
+                        Fresh([tag |-> "Timeout", origin |-> name[2]]))
     /\ UNCHANGED <<docs, timeouts, outbox, now>>
 
 Process(r) ==
     /\ r \in DOMAIN steps
     /\ steps[r].phase = "process"
+    \* Timer effects inside handlers are logical deadline metadata. Physical
+    \* empty timer documents are reconciled from the workflow before/after.
     /\ LET o     == OriginOf(steps[r].ev)
            swept == Sweep(docs[o], now)
            out   == Handle(steps[r].ev, swept.doc, now)
            final == out.doc
-           puts  == swept.puts  \o out.puts
-           dels  == swept.dels  \o out.dels
+           before == TimerNames(docs[o], o)
+           after  == TimerNames(final, o)
+           puts  == SetToSeq(after \ before)
+           dels  == SetToSeq(before \ after)
            sends == swept.sends \o out.sends
        IN  steps' = [steps EXCEPT ![r].phase   = "perform",
                                   ![r].at      = now,
@@ -723,7 +722,7 @@ PerformPutTimeout(r) ==
     /\ LET e    == Head(steps[r].pending)
            rest == [steps EXCEPT ![r].pending = Tail(@)]
        IN  /\ e.tag = "PutTimeout"
-           /\ timeouts' = timeouts \cup {e.entry}
+           /\ timeouts' = Set(timeouts, e.entry, EmptyFn)
            /\ steps'    = rest
            /\ UNCHANGED <<docs, outbox, now>>
 
@@ -758,7 +757,7 @@ PerformDelTimeout(r) ==
     /\ LET e    == Head(steps[r].pending)
            rest == [steps EXCEPT ![r].pending = Tail(@)]
        IN  /\ e.tag = "DelTimeout"
-           /\ timeouts' = timeouts \ {e.entry}
+           /\ timeouts' = Del(timeouts, e.entry)
            /\ steps'    = rest
            /\ UNCHANGED <<docs, outbox, now>>
 
@@ -780,14 +779,14 @@ Clock ==
 
 Init ==
     /\ docs     = [o \in Origin |-> EmptyFn]
-    /\ timeouts = {}
+    /\ timeouts = EmptyFn
     /\ outbox   = {}
     /\ steps    = EmptyFn
     /\ now      = 0
 
 Next ==
     \/ \E ev \in ExternalEvent : SubmitExternal(ev)
-    \/ \E e \in timeouts : SubmitInternal(e)
+    \/ \E name \in DOMAIN timeouts : SubmitInternal(name)
     \/ \E r \in DOMAIN steps : Process(r) \/ Perform(r) \/ Crash(r)
     \/ Clock
 
@@ -796,9 +795,9 @@ EventuallyStable ==
 
 Fairness ==
     /\ \A r  \in Rid             : WF_vars(Process(r) \/ Perform(r))
-    /\ \A i \in Id, k \in DeadlineKind :
-           SF_vars(\E e \in timeouts :
-                       e.id = i /\ e.kind = k /\ SubmitInternal(e))
+    /\ \A o \in Origin :
+           SF_vars(\E name \in DOMAIN timeouts :
+                       name[2] = o /\ SubmitInternal(name))
     /\ WF_vars(Clock)
     /\ EventuallyStable
 
@@ -821,22 +820,58 @@ C_NowBound ==
 C_VersionBound ==
     \A i \in UNION { DOMAIN docs[o] : o \in Origin } : docs[i.origin][i].task.version <= MaxVersion
 
+TimerNameOK(name) ==
+    /\ name = <<name[1], name[2]>>
+    /\ name[1] \in Time
+    /\ name[2] \in Origin
+
+DeadlineOk ==
+    \A name \in DOMAIN timeouts :
+        /\ TimerNameOK(name)
+        /\ timeouts[name] = EmptyFn
+
+Blob ==
+    [ wf |-> docs,
+      tm |-> timeouts ]
+
+DocumentTypeOK(doc, origin) ==
+    /\ doc = [id \in DOMAIN doc |-> doc[id]]
+    /\ DOMAIN doc \subseteq Id
+    /\ \A id \in DOMAIN doc :
+          /\ id.origin = origin
+          /\ doc[id] \in Object
+
+BlobShapeOK ==
+    /\ DOMAIN Blob = {"wf", "tm"}
+    /\ DOMAIN Blob.wf = Origin
+
+WorkflowStorageTypeOK ==
+    /\ BlobShapeOK
+    /\ \A origin \in Origin :
+          DocumentTypeOK(Blob.wf[origin], origin)
+
+TimerStorageTypeOK ==
+    /\ BlobShapeOK
+    /\ DeadlineOk
+
+StorageTypeOK ==
+    /\ WorkflowStorageTypeOK
+    /\ TimerStorageTypeOK
+
 C_TypeOK ==
-    A!TypeOK
+    /\ now \in Time
+    /\ StorageTypeOK
+    /\ outbox \subseteq OutEntry
+    /\ \A a, b \in outbox : MsgKey(a) = MsgKey(b) => a = b
 
-C_UnitCoherent ==
-    A!UnitCoherent
-
-Armed(doc) ==
-    { e \in { [at |-> Deadline(doc[i], k), id |-> i, kind |-> k] :
-                i \in DOMAIN doc, k \in DeadlineKind } :
-        e.at /= NoTime }
+ArmedTimers ==
+    UNION { TimerNames(docs[o], o) : o \in Origin }
 
 C_WheelSound ==
-    timeouts \subseteq Armed(Objects)
+    DOMAIN timeouts \subseteq ArmedTimers
 
 C_WheelComplete ==
-    Armed(Objects) \subseteq timeouts
+    ArmedTimers \subseteq DOMAIN timeouts
 
 SplitWrite ==
     \E r \in DOMAIN steps :
@@ -847,11 +882,5 @@ SplitWrite ==
 
 NoSplitWrite ==
     ~SplitWrite
-
-CT_preserved_settled_promise_record ==
-    [][A!preserved_settled_promise_record]_vars
-
-CT_consistent_promise_settlement_stamp ==
-    [][A!consistent_promise_settlement_stamp]_vars
 
 =============================================================================
