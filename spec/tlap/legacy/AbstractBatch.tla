@@ -275,17 +275,16 @@ FullSweepWitness(st, t) ==
 (* Executable sanity check: the all-eligible endpoint is one member of the
    same relation used by Batch (with no request in its final stage). *)
 FullSweepAdmitted ==
-    FullSweepWitness(CurrentBatchState, now)
-        \in PipelineWitnesses(CurrentBatchState, now)
+    \A at \in Horizon :
+        FullSweepWitness(CurrentBatchState, at)
+            \in PipelineWitnesses(CurrentBatchState, at)
 
 Batch ==
-    (* Deliberately current-now: a saved decision timestamp is not an
-       alternative witness time. *)
-    \E witness \in PipelineWitnesses(CurrentBatchState, now) :
-        /\ witness.work > 0
-        /\ objects' = witness.states[7].objects
-        /\ network' = witness.states[7].network
-        /\ UNCHANGED now
+    \E at \in Horizon :
+        \E witness \in PipelineWitnesses(CurrentBatchState, at) :
+            /\ witness.work > 0
+            /\ objects' = witness.states[7].objects
+            /\ network' = witness.states[7].network
 
 (* Direct Abstract actions are intentionally still present. *)
 BatchNext ==

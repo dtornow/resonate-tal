@@ -39,7 +39,6 @@ ProbeInit ==
     /\ objects = Write(Write(EmptyFn, AwaitedId, AwaitedObject),
                        AwaiterId, AwaiterObject)
     /\ network = {}
-    /\ now = 1
 
 ProbeNext ==
     Batch
